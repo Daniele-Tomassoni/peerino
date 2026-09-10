@@ -153,7 +153,17 @@ Per bug e richieste, apri una [Issue](https://github.com/your-username/peerino/i
 
 ## 📄 Licenza
 
-Distribuito sotto licenza **MIT**. Vedi [`LICENSE`](LICENSE) per i dettagli.
+Distribuito sotto licenza **GNU Affero General Public License v3.0 (AGPLv3)**.
+
+Questo progetto è software libero: puoi redistribuirlo e/o modificare secondo
+i termini della GNU Affero General Public License, versione 3, come pubblicata
+dalla Free Software Foundation.
+
+Vedi [`LICENSE`](LICENSE) per il testo completo.
+
+**Nota**: se modifichi Peerino e lo offri come servizio di rete, devi
+rilasciare il codice sorgente delle tue modifiche sotto la stessa licenza
+(questo è il requisito principale dell'AGPLv3).
 
 ---
 
