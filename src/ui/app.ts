@@ -960,6 +960,18 @@ function updateContext(_context?: 'local' | 'internet'): void {
 const TURN_USERNAME = import.meta.env.VITE_TURN_USERNAME || '';
 const TURN_PASSWORD = import.meta.env.VITE_TURN_PASSWORD || '';
 
+/**
+ * Maschera un Peer ID per i log visibili all'utente.
+ * Mostra solo i primi 12 caratteri, il resto diventa "...".
+ * Es: "peerino-74181e9e-1e4e-40e3-b7c0-134bced532ea" → "peerino-74181e9e-1e..."
+ * Il Peer ID completo rimane disponibile in console.log per il debug.
+ */
+function maskPeerId(peerId: string | undefined | null): string {
+    if (!peerId) return '(null)';
+    if (peerId.length <= 12) return peerId;
+    return peerId.slice(0, 12) + '...';
+}
+
 const iceServers: RTCIceServer[] = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
@@ -1021,7 +1033,8 @@ async function initPeer(forceRandom: boolean = false): Promise<void> {
             if (relayStatusEl) relayStatusEl.textContent = 'Active';
             // Update the PeerID in backend for web link generation
             invoke('set_peer_id', { peerId: id }).catch(console.error);
-            log('✅ PeerJS connected with ID: ' + id + (isSelfHosted ? ' (self-hosted)' : ' (cloud)') + (peerIdArg ? ' (persistent)' : ' (random)'));
+            log('✅ PeerJS connected with ID: ' + maskPeerId(id) + (isSelfHosted ? ' (self-hosted)' : ' (cloud)') + (peerIdArg ? ' (persistent)' : ' (random)'));
+            console.log('Full PeerJS ID (debug only):', id);
         });
         peer.on('connection', (conn: DataConnection) => {
             log('📥 Connection from: ' + conn.peer);
@@ -1452,7 +1465,8 @@ async function finalizeIncomingUpload(conn: DataConnection, upload: IncomingUplo
 
     // Call finalize_incoming_file with try/catch
     try {
-        log('📌 finalize_incoming_file with peerId: ' + conn.peer);
+        log('📌 finalize_incoming_file with peerId: ' + maskPeerId(conn.peer));
+        console.log('Full peerId (debug):', conn.peer);
         const result = await invoke<string>('finalize_incoming_file', {
             peerId: conn.peer
         });
@@ -1525,7 +1539,8 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
             }
             if (msg.type === 'upload_file') {
                 // Browser is sending a file (Reverse Inbox)
-                log('📥 Upload request from browser: ' + msg.filename + ' (peerId: ' + conn.peer + ')');
+                log('📥 Upload request from browser: ' + msg.filename + ' (peerId: ' + maskPeerId(conn.peer) + ')');
+                console.log('Full peerId (debug):', conn.peer);
 
                 // TURN size limit (Fase 2): blocca upload browser>app oltre TURN_MAX_FILE_SIZE.
                 // FIX: show the download bar IMMEDIATELY (before detectConnectionPath)
@@ -1636,7 +1651,8 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                 // (difesa in profondità). Senza questo, il path è sempre None e il
                 // controllo in init_incoming_upload.rs:29 non si attiva mai.
                 try {
-                    log('📌 init_incoming_upload with peerId: ' + conn.peer);
+                    log('📌 init_incoming_upload with peerId: ' + maskPeerId(conn.peer));
+                    console.log('Full peerId (debug):', conn.peer);
                     await invoke('init_incoming_upload', {
                         peerId: conn.peer,
                         filename: msg.filename,
@@ -1701,7 +1717,8 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                 if (upload) {
                     // Call append_incoming_chunk to write incrementally to disk
                     try {
-                        log('📌 append_incoming_chunk with peerId: ' + conn.peer + ', chunk size: ' + chunk.length);
+                        log('📌 append_incoming_chunk with peerId: ' + maskPeerId(conn.peer) + ', chunk size: ' + chunk.length);
+                        console.log('Full peerId (debug):', conn.peer);
                         await invoke('append_incoming_chunk', {
                             peerId: conn.peer,
                             chunk: chunk

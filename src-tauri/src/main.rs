@@ -216,15 +216,15 @@ fn main() {
             
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = tokio::fs::create_dir_all(&shared_folder).await {
-                    eprintln!("⚠️ Could not create shared folder: {}", e);
+                    log::warn!("⚠️ Could not create shared folder: {}", e);
                 }
                 if let Err(e) = tokio::fs::create_dir_all(&temp_folder).await {
-                    eprintln!("⚠️ Could not create temp folder: {}", e);
+                    log::warn!("⚠️ Could not create temp folder: {}", e);
                 }
                 if let Err(e) = tokio::fs::create_dir_all(&config_folder).await {
-                    eprintln!("⚠️ Could not create config folder: {}", e);
+                    log::warn!("⚠️ Could not create config folder: {}", e);
                 }
-                
+
                 // Apri il database dopo aver creato la cartella config
                 {
                     let mut db_guard = db.lock().await;
@@ -233,22 +233,22 @@ fn main() {
                     if let Ok(persistent_db) = rusqlite::Connection::open(&db_path) {
                         *db_guard = persistent_db;
                     }
-                    
+
                     // Imposta WAL mode
                     if let Err(e) = db_guard.pragma_update(None, "journal_mode", &"WAL") {
-                        eprintln!("⚠️ Could not set WAL mode: {}", e);
+                        log::warn!("⚠️ Could not set WAL mode: {}", e);
                     }
                 }
-                
+
                 // Inizializza la tabella files
                 let repo = database::files::FileRepository::new(db.clone());
                 if let Err(e) = repo.init_table().await {
-                    eprintln!("⚠️ Could not create files table: {}", e);
+                    log::warn!("⚠️ Could not create files table: {}", e);
                 }
-                
+
                 // Scansiona la shared-folder e aggiunge i file mancanti al database
                 if let Err(e) = repo.scan_and_populate(&shared_folder).await {
-                    eprintln!("⚠️ Could not scan shared folder: {}", e);
+                    log::warn!("⚠️ Could not scan shared folder: {}", e);
                 }
                 
                 // Carica i file esistenti dal database nell'indice in memoria
