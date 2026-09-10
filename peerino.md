@@ -1112,9 +1112,9 @@ Tutti dichiarati in `src-tauri/capabilities/default.json`. I comandi custom (Tau
 - Modificato: [`src/ui/web-receiver.html`](src/ui/web-receiver.html) — legge `&ice=<base64>` con priorità.
 - Aggiunto: `reqwest = "0.12"` in [`Cargo.toml`](src-tauri/Cargo.toml) (con `rustls-tls` per evitare OpenSSL).
 
-**Configurazione `.env`** (transient metered):
+**Configurazione `.env`** (transient metered — dismesso):
 ```bash
-METERED_API_KEY=ee9c9b85f9a3592955e65e73ae349ffb2e90  # ⚠️ ruotare
+METERED_API_KEY=<rimossa — si passa a Coturn self-hosted>  # ⚠️ ruotare
 METERED_API_BASE=https://peerino.metered.live/api/v1  # opzionale
 ```
 
