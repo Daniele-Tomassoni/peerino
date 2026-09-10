@@ -1,0 +1,1338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>P2P Share</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <script src="https://unpkg.com/js-sha256@0.9.0/build/sha256.min.js"></script>
+    <style>
+        /* ===== RESET & BASE ===== */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            min-height: 100dvh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(180deg, #070B14 0%, #16213E 100%);
+            padding: 20px;
+            position: relative;
+        }
+        body::before {
+            content: '';
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(0, 212, 255, 0.06) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+        body::after {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
+            background-size: 200px 200px;
+            opacity: 0.03;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* ===== CONTAINER ===== */
+        .container {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            max-width: 560px;
+            background: rgba(30, 41, 59, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-radius: 16px;
+            padding: 30px 24px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        /* ===== HEADER ===== */
+        .header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .header .logo {
+            font-size: 2rem;
+        }
+        .header h1 {
+            font-size: 1.4rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #60a5fa, #3b82f6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .header .badge {
+            margin-left: auto;
+            font-size: 0.65rem;
+            background: rgba(59, 130, 246, 0.15);
+            color: #60a5fa;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: 500;
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+
+        /* ===== STATUS ===== */
+        .status-box {
+            background: #0f172a;
+            padding: 12px 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 0.9rem;
+            color: #94a3b8;
+            min-height: 48px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            text-align: center;
+            word-break: break-word;
+        }
+        .status-box.success {
+            color: #4ade80;
+            border-color: rgba(74, 222, 128, 0.15);
+        }
+        .status-box.error {
+            color: #f87171;
+            border-color: rgba(248, 113, 113, 0.15);
+        }
+        .status-box.loading {
+            color: #fbbf24;
+            border-color: rgba(251, 191, 36, 0.15);
+        }
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        /* ===== DOWNLOAD UI ===== */
+        .download-ui {
+            display: none;
+        }
+        .download-ui.active {
+            display: block;
+        }
+
+        .progress-container {
+            display: none;
+            margin: 12px 0;
+        }
+        .progress-container.visible {
+            display: block;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 6px;
+            background: #1e293b;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #3b82f6, #60a5fa);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        .progress-text {
+            font-size: 0.8rem;
+            color: #64748b;
+            margin-top: 4px;
+            text-align: center;
+        }
+
+        .download-btn {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #22c55e, #16a34a);
+            color: #fff;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: none;
+            margin-top: 8px;
+        }
+        .download-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 24px rgba(34, 197, 94, 0.3);
+        }
+        .download-btn.show {
+            display: block;
+        }
+        .download-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* ===== UPLOAD UI (Inbox) ===== */
+        .upload-ui {
+            display: none;
+        }
+        .upload-ui.active {
+            display: block;
+        }
+
+        .upload-zone {
+            border: 2px dashed #334155;
+            border-radius: 12px;
+            padding: 40px 20px;
+            text-align: center;
+            background: rgba(15, 23, 42, 0.5);
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 12px;
+        }
+        .upload-zone:hover {
+            border-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.05);
+        }
+        .upload-zone.dragover {
+            border-color: #3b82f6;
+            background: rgba(59, 130, 246, 0.1);
+        }
+        .upload-zone .icon {
+            font-size: 3rem;
+            margin-bottom: 8px;
+        }
+        .upload-zone p {
+            color: #94a3b8;
+            font-size: 0.95rem;
+        }
+        .upload-zone .filename-display {
+            color: #60a5fa;
+            font-weight: 600;
+        }
+        .upload-zone input[type="file"] {
+            display: none;
+        }
+
+        .upload-btn {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: #fff;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .upload-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 24px rgba(59, 130, 246, 0.3);
+        }
+        .upload-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* ===== PHASES STEPPER (feedback percorso di connessione) ===== */
+        .phases {
+            display: none;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 14px;
+        }
+        .phases.visible {
+            display: flex;
+        }
+        .phase {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.8rem;
+            color: #64748b;
+            background: #0f172a;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            padding: 8px 12px;
+            border-radius: 8px;
+            transition: all 0.3s;
+        }
+        .phase .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #334155;
+            flex-shrink: 0;
+        }
+        /* Active phase = blue (work in progress). Yellow is RESERVED for the
+           TURN relay outcome only, matching the LED semantics of the app. */
+        .phase.active { color: #38bdf8; border-color: rgba(56, 189, 248, 0.2); }
+        .phase.active .dot { background: #38bdf8; animation: phasepulse 0.9s infinite alternate; }
+        .phase.done { color: #4ade80; border-color: rgba(74, 222, 128, 0.15); }
+        .phase.done .dot { background: #4ade80; }
+        .phase.done.turn { color: #fbbf24; border-color: rgba(251, 191, 36, 0.2); }
+        .phase.done.turn .dot { background: #fbbf24; }
+        .phase.done.overlimit { color: #f87171; border-color: rgba(248, 113, 113, 0.2); }
+        .phase.done.overlimit .dot { background: #f87171; }
+        .phase.fail { color: #475569; }
+        .phase.fail .dot { background: #334155; }
+        @keyframes phasepulse { to { opacity: 0.35; } }
+
+        .start-btn {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: #fff;
+            font-weight: 700;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-top: 8px;
+        }
+        .start-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 24px rgba(59, 130, 246, 0.3);
+        }
+        .start-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        /* ===== LOG ===== */
+        .log-container {
+            background: #0f172a;
+            padding: 10px;
+            border-radius: 8px;
+            max-height: 150px;
+            overflow: auto;
+            font-size: 0.7rem;
+            color: #94a3b8;
+            font-family: monospace;
+            margin-top: 14px;
+            border: 1px solid rgba(255, 255, 255, 0.04);
+            text-align: left;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .log-container div {
+            padding: 2px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+        }
+
+        /* ===== FOOTER ===== */
+        .footer {
+            margin-top: 14px;
+            font-size: 0.7rem;
+            color: #475569;
+            border-top: 1px solid rgba(255, 255, 255, 0.04);
+            padding-top: 12px;
+            text-align: center;
+        }
+
+        /* ===== RESPONSIVE ===== */
+        @media (max-width: 480px) {
+            .container {
+                padding: 20px 16px;
+            }
+            .header h1 {
+                font-size: 1.2rem;
+            }
+            .upload-zone {
+                padding: 30px 16px;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <!-- HEADER -->
+        <div class="header">
+            <span class="logo">📁</span>
+            <h1 id="page-title">P2P Share</h1>
+            <span class="badge" id="page-badge">Download</span>
+        </div>
+
+        <!-- STATUS -->
+        <div id="status" class="status-box loading">
+            <span class="spinner"></span> Initializing...
+        </div>
+
+        <!-- DETECTING STATUS -->
+        <div id="detecting-status" class="detecting-status" style="display:none;">
+            <span class="spinner"></span> Detecting best connection path...
+        </div>
+
+        <!-- PHASES: connection path (LAN -> STUN -> TURN) -->
+        <div id="phases" class="phases">
+            <div class="phase" id="phase-lan"><span class="dot"></span>🏠 Local network</div>
+            <div class="phase" id="phase-stun"><span class="dot"></span>🌏 Direct internet</div>
+            <div class="phase" id="phase-turn"><span class="dot"></span>🔄 Relay server</div>
+        </div>
+
+        <!-- TURN bandwidth warning -->
+        <div id="turn-warning" class="turn-warning" style="display:none; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 8px; padding: 12px; margin-top: 10px; color: #fbbf24; font-size: 0.85rem; text-align: center; font-weight: 500;">
+            ⚠️ This transfer uses a relay server. It may be slower and count double against your bandwidth.
+        </div>
+
+        <!-- DOWNLOAD UI -->
+        <div id="download-ui" class="download-ui">
+            <button id="startBtn" class="start-btn">⬇ Start download</button>
+            <div id="progress-container" class="progress-container">
+                <div class="progress-bar">
+                    <div id="progress-fill" class="progress-fill" style="width:0%"></div>
+                </div>
+                <div id="progress-text" class="progress-text">0%</div>
+            </div>
+            <button id="downloadBtn" class="download-btn">💾 Save the file</button>
+        </div>
+
+        <!-- UPLOAD UI (Inbox) -->
+        <div id="upload-ui" class="upload-ui">
+            <div class="upload-zone" id="uploadZone">
+                <div class="icon">📤</div>
+                <p>Drag a file here or click to select it</p>
+                <p style="font-size:0.8rem; color:#64748b; margin-top:8px;" id="upload-filename-display">No file selected</p>
+                <input type="file" id="fileInput">
+            </div>
+            <button id="uploadBtn" class="upload-btn">📤 Upload file</button>
+        </div>
+
+        <!-- LOG -->
+        <div id="logContainer" class="log-container">📋 Real-time log...</div>
+
+        <!-- FOOTER -->
+        <div class="footer">🔒 Direct and encrypted connection (WebRTC)</div>
+    </div>
+
+    <script>
+        (function() {
+            'use strict';
+
+            // ===== DOM REFS =====
+            const statusEl = document.getElementById('status');
+            const logContainer = document.getElementById('logContainer');
+            const pageTitle = document.getElementById('page-title');
+            const pageBadge = document.getElementById('page-badge');
+
+            const downloadUI = document.getElementById('download-ui');
+            const uploadUI = document.getElementById('upload-ui');
+            const progressContainer = document.getElementById('progress-container');
+            const progressFill = document.getElementById('progress-fill');
+            const progressText = document.getElementById('progress-text');
+            const downloadBtn = document.getElementById('downloadBtn');
+            const uploadZone = document.getElementById('uploadZone');
+            const fileInput = document.getElementById('fileInput');
+            const uploadBtn = document.getElementById('uploadBtn');
+            const uploadFilenameDisplay = document.getElementById('upload-filename-display');
+            const startBtn = document.getElementById('startBtn');
+            const phasesEl = document.getElementById('phases');
+
+            // ===== STATE =====
+            let peer = null;
+            let connection = null;
+            let fileName = '';
+            let fileSize = 0;
+            let receivedChunks = [];
+            let receivedSize = 0;
+            let isDownloadReady = false;
+            let startTime = 0;
+            let selectedFile = null;
+            let uploadFileHash = null;
+
+            // ===== URL PARAMS =====
+            const params = new URLSearchParams(window.location.search);
+            const mode = params.get('mode');
+            const senderPeerId = params.get('peerId');
+            const fileHash = params.get('hash');
+            const filenameParam = params.get('filename');
+            const inboxId = params.get('id');
+            // serverUrl: used for inbox uploads when the page is on Netlify
+            // (the page origin is Netlify, not the sender's server)
+            const serverUrl = params.get('serverUrl');
+            // WebRTC config for inbox upload (signal, turnUser, turnPass)
+            const signalHost = params.get('signal');
+            const turnUser = params.get('turnUser');
+            const turnPass = params.get('turnPass');
+            // ICE servers from the link (env-driven): comma separated lists
+            const stunUrlsParam = params.get('stunUrls');
+            const turnUrlsParam = params.get('turnUrls');
+            // ICE unificato (provider-agnostic): base64 di JSON array WebRTC standard.
+            // Quando presente, ha priorità su stunUrls/turnUrls/turnUser/turnPass.
+            // Formato: [{ urls: 'turn:...', username: '...', credential: '...' }, ...]
+            const iceParam = params.get('ice');
+            // Indirizzo del server HTTP locale del mittente (fallback LAN)
+            // Se la pagina è caricata dal server locale (HTTP), usa window.location.origin
+            // come base LAN (la pagina è già same-origin con il server).
+            // Altrimenti, usa il parametro 'lan' dal link (per pagine caricate da Netlify).
+            const isLocalPage = window.location.protocol === 'http:' &&
+                               !window.location.hostname.includes('netlify.app') &&
+                               !window.location.hostname.includes('peerino.com');
+            const lanBase = isLocalPage
+                ? window.location.origin
+                : (params.get('lan') || '').replace(/\/+$/, '');
+
+            // Decidi in anticipo se la LAN e davvero raggiungibile.
+            // Mixed content (HTTPS->HTTP verso IP privato) viene bloccato dal
+            // browser in modo asincrono: il fetch attende il timeout TCP (~5s)
+            // prima di fallire. Riconosciamo subito il caso e skipp la LAN.
+            // Regola: la LAN e raggiungibile SOLO se la pagina e servita
+            // dal server locale (isLocalPage). Altrimenti il fetch verso
+            // un IP privato da una pagina HTTPS verra bloccato.
+            const isLanReachable = isLocalPage;
+
+            const isInbox = (mode === 'inbox' || window.location.pathname.startsWith('/inbox/'));
+
+            // FIX ALTO: limite TURN configurabile via link (&turnMax=).
+            // Fallback al hardcoded 104857600 (100MB) se assente o non valido.
+            // Questo garantisce che browser e backend siano sempre sincronizzati,
+            // anche se il limite viene cambiato via env (TURN_MAX_FILE_SIZE).
+            const turnMaxParam = params.get('turnMax');
+            let TURN_MAX_FILE_SIZE = 104857600; // default 100MB
+            if (turnMaxParam) {
+                const parsed = parseInt(turnMaxParam, 10);
+                if (!isNaN(parsed) && parsed > 0) {
+                    TURN_MAX_FILE_SIZE = parsed;
+                } else {
+                    log('⚠️ Invalid turnMax from link ("' + turnMaxParam + '"), using default 100MB');
+                }
+            }
+
+            // ===== LOG =====
+            // Security notes:
+            // - textContent only => no XSS via logged data
+            // - DOM capped to the last 200 entries (no flooding on big transfers)
+            // - No sensitive details here: peer IDs, signaling hosts, TURN state,
+            //   hashes and raw WebRTC error messages go to console.error only
+            //   (visible only via explicit DevTools inspection).
+            const MAX_LOG_ENTRIES = 200;
+            function log(msg) {
+                console.log(msg);
+                if (logContainer) {
+                    const div = document.createElement('div');
+                    div.textContent = msg;
+                    logContainer.appendChild(div);
+                    while (logContainer.childElementCount > MAX_LOG_ENTRIES) {
+                        logContainer.removeChild(logContainer.firstElementChild);
+                    }
+                    logContainer.scrollTop = logContainer.scrollHeight;
+                }
+            }
+
+            function setStatus(text, type) {
+                statusEl.textContent = text;
+                statusEl.className = 'status-box';
+                if (type) statusEl.classList.add(type);
+            }
+
+            // ===== PHASES HELPERS =====
+            function setPhase(id, state) {
+                const el = document.getElementById('phase-' + id);
+                if (!el) return;
+                // Reset all state classes
+                el.className = 'phase';
+                if (state) {
+                    // Map old state names to new ones for LED consistency
+                    if (state === 'done-red') state = 'done overlimit';
+                    el.classList.add(state);
+                }
+            }
+
+            function showPhases() { phasesEl.classList.add('visible'); }
+
+            const detectingEl = document.getElementById('detecting-status');
+            const turnWarningEl = document.getElementById('turn-warning');
+            function showDetecting() { if (detectingEl) detectingEl.style.display = 'flex'; }
+            function hideDetecting() { if (detectingEl) detectingEl.style.display = 'none'; }
+            function showTurnWarning() { if (turnWarningEl) turnWarningEl.style.display = 'block'; }
+            function hideTurnWarning() { if (turnWarningEl) turnWarningEl.style.display = 'none'; }
+
+            // Dynamic header badge (pageBadge already declared above)
+            function setHeaderBadge(text) { if (pageBadge) pageBadge.textContent = text; }
+
+            // Speed/ETA for progress
+            function formatSpeed(bytesPerSec) {
+                if (!bytesPerSec || bytesPerSec <= 0) return '0 MB/s';
+                const mbps = bytesPerSec / (1024 * 1024);
+                return mbps >= 1 ? mbps.toFixed(1) + ' MB/s' : (bytesPerSec / 1024).toFixed(0) + ' KB/s';
+            }
+            function formatETA(seconds) {
+                if (!seconds || !isFinite(seconds) || seconds < 0) return '';
+                const s = Math.round(seconds);
+                if (s < 60) return s + 's';
+                const m = Math.floor(s / 60);
+                const r = s % 60;
+                return m + 'm ' + r + 's';
+            }
+
+            // Probe LAN using fetch. Handles mixed-content gracefully by catching
+            // errors (the browser may block HTTPS→HTTP requests). If the probe fails
+            // (including mixed-content blocking), returns false and the app falls back
+            // to WebRTC/STUN connection.
+            function probeLan() {
+                if (!lanBase) return Promise.resolve(false);
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), 2500);
+                return fetch(lanBase + '/ping', { mode: 'no-cors' })
+                    .then(() => { clearTimeout(timer); return true; })
+                    .catch((e) => { 
+                        // Mixed content or other error - LAN not available via HTTP
+                        clearTimeout(timer); 
+                        return false; 
+                    });
+            }
+            // Kept for backward compatibility — no-op.
+            function openLanProbe() { return null; }
+
+            // Rileva il percorso ICE vincente via getStats e aggiorna lo stepper
+            function detectAndMarkPath(conn) {
+                const pc = conn.peerConnection || (conn._pc) || null;
+                if (!pc) return;
+                let attempts = 0;
+                const timer = setInterval(async () => {
+                    attempts++;
+                    try {
+                        const stats = await pc.getStats();
+                        let pair = null;
+                        stats.forEach((r) => {
+                            if (r.type === 'candidate-pair' &&
+                                (r.selected === true || r.nominated === true || r.state === 'succeeded')) {
+                                pair = pair || r;
+                            }
+                        });
+                        if (pair && pair.localCandidateId && pair.remoteCandidateId) {
+                            const local = stats.get(pair.localCandidateId);
+                            const remote = stats.get(pair.remoteCandidateId);
+                            const t = [local?.candidateType, remote?.candidateType];
+                            clearInterval(timer);
+                            if (t.includes('relay')) {
+                                showTurnWarning();
+                                setPhase('stun', 'fail');
+                                setPhase('turn', 'done turn');
+                                setHeaderBadge('Relay');
+                                if (typeof fileSize === 'number' && fileSize > TURN_MAX_FILE_SIZE) {
+                                    setPhase('turn', 'done overlimit');
+                                    log('🔴 Selected path: TURN relay, file exceeds ' + (TURN_MAX_FILE_SIZE / 1048576) + 'MB limit');
+                                } else {
+                                    setPhase('turn', 'done turn');
+                                    log('🟡 Selected path: TURN relay, file within ' + (TURN_MAX_FILE_SIZE / 1048576) + 'MB limit');
+                                }
+                            } else if (t[0] === 'host' && t[1] === 'host') {
+                                hideTurnWarning();
+                                // FIX: both ICE candidates are 'host' → direct LAN connection.
+                                // Previously this branch also called setPhase('stun','done'),
+                                // which made the stepper lie: the log said "local network" but
+                                // the UI showed "STUN" green. Now the UI matches the path.
+                                setPhase('lan', 'done');
+                                setPhase('stun', 'fail');
+                                setHeaderBadge('LAN');
+                                log('🟢 Selected path: local network (host)');
+                            } else if (t.includes('srflx') || t.includes('prflx')) {
+                                hideTurnWarning();
+                                setPhase('stun', 'done');
+                                setHeaderBadge('Internet');
+                                log('🟢 Selected path: direct via STUN');
+                            } else {
+                                hideTurnWarning();
+                                // Mixed / unknown ICE pair (e.g. host + srflx): relay is not
+                                // involved but the path is not a pure LAN link either.
+                                // Treat as STUN to keep the stepper truthful.
+                                setPhase('stun', 'done');
+                                setHeaderBadge('Internet');
+                                log('🟢 Selected path: ICE mixed (treating as STUN)');
+                            }
+                        }
+                    } catch (e) { /* stats non pronte */ }
+                    if (attempts > 10) clearInterval(timer);
+                }, 1000);
+            }
+
+            // ===== START DOWNLOAD FLOW (conferma utente + race LAN/WebRTC) =====
+            async function startDownloadFlow() {
+                startBtn.disabled = true;
+                setHeaderBadge('Connecting...');
+                showDetecting();
+                showPhases();
+                // Determina subito la fase iniziale: se la LAN non e raggiungibile
+                // (pagina HTTPS + IP privato = mixed content bloccato), skip
+                // direttamente a STUN senza attendere il timeout TCP (~5s).
+                if (lanBase && isLanReachable) { setPhase('lan', 'active'); } else { setPhase('stun', 'active'); }
+
+                // Try LAN download only when the LAN is actually reachable
+                // (page is served from the local server). If the page is on
+                // Netlify, going to a private IP would be blocked as mixed
+                // content and the TCP connect could take seconds to time out.
+                if (lanBase && isLanReachable) {
+                    setStatus('🟢 Trying local network download...', 'success');
+                    const downloadUrl = lanBase + '/download/' + encodeURIComponent(fileHash || '');
+                    log('⬇ Fetching file from local server: ' + downloadUrl);
+                    try {
+                        const controller = new AbortController();
+                        const fetchTimeout = setTimeout(() => controller.abort(), 1500);
+                        const response = await fetch(downloadUrl, { signal: controller.signal });
+                        clearTimeout(fetchTimeout);
+                        if (!response.ok) {
+                            throw new Error('HTTP ' + response.status);
+                        }
+                        setPhase('lan', 'done');
+                        const blob = await response.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = filenameParam || 'file.bin';
+                        document.body.appendChild(a);
+                        a.click();
+                        document.body.removeChild(a);
+                        setTimeout(() => URL.revokeObjectURL(url), 5000);
+                        setStatus('✅ Download completed!', 'success');
+                        log('✅ File downloaded via LAN HTTP');
+                        return;
+                    } catch (fetchErr) {
+                        log('⚠️ LAN fetch failed, falling back to WebRTC: ' + fetchErr.message);
+                        setPhase('lan', 'fail');
+                        setPhase('stun', 'active');
+                    }
+                }
+
+                hideDetecting();
+                // Avvia WebRTC dopo che il probe LAN si concluso
+                connectToSender(senderPeerId);
+            }
+
+            startBtn.addEventListener('click', () => {
+                if (!senderPeerId) {
+                    setStatus('⚠️ Invalid link: missing sender PeerID.', 'error');
+                    return;
+                }
+                startDownloadFlow();
+            });
+
+            // ===== SETUP UI =====
+            function setupUI() {
+                if (isInbox) {
+                    // MODE: INBOX (upload)
+                    pageTitle.textContent = '📤 Send a file';
+                    pageBadge.textContent = 'Upload';
+                    downloadUI.classList.remove('active');
+                    uploadUI.classList.add('active');
+                    setStatus('Select a file and press Upload.', '');
+                    log('📤 Inbox mode activated.');
+                } else {
+                    // MODE: DOWNLOAD — schermata di conferma prima della connessione
+                    pageTitle.textContent = '📥 File ready';
+                    pageBadge.textContent = 'Download';
+                    downloadUI.classList.add('active');
+                    uploadUI.classList.remove('active');
+
+                    if (senderPeerId) {
+                        // No peer ID / hash in the visible log: they are already
+                        // in the URL and add nothing for the receiver.
+                        if (filenameParam) {
+                            log(`📎 File: ${filenameParam}`);
+                            startBtn.textContent = `⬇ Download "${filenameParam}"`;
+                        } else {
+                            startBtn.textContent = '⬇ Start download';
+                        }
+                        setStatus('Press the button to start the secure download.', '');
+                    } else {
+                        startBtn.style.display = 'none';
+                        setStatus('⚠️ Invalid link: missing sender PeerID.', 'error');
+                        log('❌ No peerId in URL');
+                    }
+                }
+            }
+
+            // ===== ICE CONFIG FROM LINK PARAMS =====
+            // Costruisce iceServers da stunUrls/turnUrls/turnUser/turnPass nel link.
+            // Nessun server hardcoded: la configurazione arriva dall'env del mittente.
+            function splitUrlList(raw) {
+                return (raw || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+            }
+
+            function buildIceServers() {
+                // Provider TURN unificato: se il link include &ice=<base64-JSON>,
+                // decodifica e usa direttamente l'array (formato WebRTC standard).
+                // Supporta QUALSIASI provider TURN (metered, coturn self-hosted, misto)
+                // perché il backend ha già fatto il fetch server-side.
+                if (iceParam) {
+                    try {
+                        const json = atob(iceParam);
+                        const decoded = JSON.parse(json);
+                        if (Array.isArray(decoded) && decoded.length > 0) {
+                            log(`🧊 Using unified ICE provider: ${decoded.length} server(s)`);
+                            return decoded;
+                        }
+                    } catch (e) {
+                        log('⚠️ Failed to decode &ice= param, falling back to legacy params: ' + e);
+                    }
+                }
+
+                // Fallback: parametri legacy (stunUrls/turnUrls/turnUser/turnPass)
+                const ice = [];
+                const stuns = splitUrlList(stunUrlsParam);
+                if (stuns.length > 0) {
+                    stuns.forEach(function (u) { ice.push({ urls: u }); });
+                } else {
+                    // Fallback STUN pubblico se il link non specifica nulla
+                    ice.push({ urls: 'stun:stun.l.google.com:19302' });
+                }
+                if (turnUser && turnPass) {
+                    const turns = splitUrlList(turnUrlsParam);
+                    ice.push({
+                        urls: turns.length > 0 ? turns : ['turn:global.relay.metered.ca:80'],
+                        username: turnUser,
+                        credential: turnPass,
+                    });
+                    log('🔧 Assisted connection available');
+                } else {
+                    log('ℹ️ Direct connections only');
+                }
+                return ice;
+            }
+
+            // ===== PEERJS CONNECTION (Download) =====
+            function connectToSender(senderId) {
+                if (!senderId) {
+                    setStatus('❌ Error: sender ID missing.', 'error');
+                    log('❌ PeerID missing');
+                    return;
+                }
+
+                log(`🔗 Connecting to ${senderId}`);
+                setStatus('🔗 Connecting to sender...', 'loading');
+
+                // Mirror the sender's signaling + ICE config so the WebRTC
+                // connection can actually open (esp. behind NAT, where the TURN
+                // relay is required). The link carries everything via
+                // &signal / &stunUrls / &turnUrls / &turnUser / &turnPass.
+                const iceServers = buildIceServers();
+
+                const peerOptions = { config: { iceServers }, debug: 2 };
+                if (signalHost) {
+                    const isSelfHosted = !signalHost.includes('peerjs.com');
+                    peerOptions.host = signalHost;
+                    peerOptions.port = 443;
+                    peerOptions.path = '/';
+                    peerOptions.secure = isSelfHosted;
+                    log('🔧 Signaling configured');
+                }
+
+                peer = new Peer(peerOptions);
+
+                // Timeout: if the connection doesn't open within 30s, show
+                // a clear error instead of hanging forever.
+                let connectTimeout = null;
+
+                peer.on('open', () => {
+                    connection = peer.connect(senderId);
+                    if (!connection) {
+                        setStatus('❌ Could not connect to sender.', 'error');
+                        log('❌ peer.connect() returned null');
+                        return;
+                    }
+
+                    // Start path detection IMMEDIATELY (before connection.on('open'))
+                    // so the stepper updates as soon as the ICE path is known,
+                    // instead of waiting for the full WebRTC channel to open.
+                    // For TURN connections this can save 5-10 seconds of
+                    // "Connecting to sender..." with no visual feedback.
+                    detectAndMarkPath(connection);
+
+                    connectTimeout = setTimeout(() => {
+                        if (connection && !connection.open) {
+                            log('❌ Connection timeout (30s): WebRTC channel did not open');
+                            setStatus('❌ Connection timeout. Check network/NAT or TURN server.', 'error');
+                            downloadBtn.classList.remove('show');
+                        }
+                    }, 30000);
+
+                    connection.on('data', (data) => {
+                        log('📥 Data received from connection');
+                        handleData(data);
+                    });
+
+                    connection.on('open', () => {
+                        if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
+                        log('✅ Connection opened with sender');
+                        setStatus('✅ Connected. Requesting file...', 'loading');
+                        const request = { type: 'request_file', hash: fileHash || '' };
+                        connection.send(JSON.stringify(request));
+                        log(`📤 File request sent: hash=${request.hash}`);
+                    });
+
+                    connection.on('close', () => {
+                        if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
+                        log('🔌 Connection closed');
+                        setStatus('🔌 Connection closed by sender.', 'error');
+                        downloadBtn.classList.remove('show');
+                    });
+
+                    connection.on('error', (err) => {
+                        if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
+                        // Raw WebRTC errors may contain local IPs / network details:
+                        // keep the detail in console, show a generic message in the UI.
+                        console.error('Connection error details:', err);
+                        setStatus('❌ Connection error. Please retry.', 'error');
+                    });
+                });
+
+                peer.on('error', (err) => {
+                    if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
+                    console.error('PeerJS error details:', err);
+                    setStatus('❌ Connection error. Check the link and retry.', 'error');
+                });
+            }
+
+            // ===== HANDLE DATA (Download) =====
+            function handleData(data) {
+                log(`📦 Data received: type=${typeof data}, constructor=${data.constructor?.name || 'unknown'}`);
+
+                if (typeof data === 'string') {
+                    try {
+                        const meta = JSON.parse(data);
+                        if (meta.type === 'file_meta') {
+                            fileName = meta.filename || 'file.bin';
+                            fileSize = meta.size || 0;
+                            receivedChunks = [];
+                            receivedSize = 0;
+                            startTime = Date.now();
+                            log(`📄 Receiving "${fileName}" (${fileSize} bytes)`);
+                            setStatus(`📥 Receiving "${fileName}"...`, 'loading');
+                            progressContainer.classList.add('visible');
+                            updateProgress(0);
+                            downloadBtn.textContent = `⏳ Receiving... (0%)`;
+                            downloadBtn.classList.add('show');
+                            downloadBtn.disabled = true;
+                            return;
+                        }
+                        // FIX #4: Handle explicit error from sender (no more silent hang)
+                        if (meta.type === 'error') {
+                            log(`❌ Error from sender: ${meta.message}`);
+                            if (meta.reason === 'turn_size_limit') {
+                                setStatus(getTurnSizeLimitMessage(meta), 'error');
+                            } else {
+                                setStatus(`❌ ${meta.message || 'Unknown error from sender'}`, 'error');
+                            }
+                            downloadBtn.classList.remove('show');
+                            return;
+                        }
+                    } catch (e) {
+                        log(`⚠️ Non-JSON string: ${data}`);
+                    }
+                    return;
+                }
+
+                let chunk = null;
+                if (data instanceof ArrayBuffer) {
+                    chunk = new Uint8Array(data);
+                } else if (data instanceof Uint8Array) {
+                    chunk = data;
+                } else if (ArrayBuffer.isView(data)) {
+                    chunk = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+                }
+
+                if (chunk) {
+                    receivedChunks.push(chunk);
+                    receivedSize += chunk.length;
+                    const progress = fileSize > 0 ? (receivedSize / fileSize) * 100 : 0;
+                    updateProgress(progress);
+                    const speedMbps = (receivedSize / (1024 * 1024)) / (Math.max(1, (Date.now() - startTime) / 1000));
+                    const eta = speedMbps > 0 ? (fileSize - receivedSize) / (1024 * 1024) / speedMbps : 0;
+                    downloadBtn.textContent = `⏳ Receiving... (${Math.round(progress)}%) ${formatSpeed(speedMbps * 1024 * 1024)} ${formatETA(eta)}`.trim();
+
+                    if (receivedSize >= fileSize && fileSize > 0) {
+                        log('✅ Download complete!');
+                        setStatus(`✅ Received "${fileName}" (${(fileSize / 1024 / 1024).toFixed(2)} MB)`, 'success');
+                        downloadBtn.textContent = `💾 Save "${fileName}"`;
+                        downloadBtn.disabled = false;
+                        progressContainer.classList.remove('visible');
+                    }
+                } else {
+                    log(`⚠️ Unhandled data: ${data}`);
+                }
+            }
+
+            function updateProgress(pct) {
+                pct = Math.min(Math.max(pct, 0), 100);
+                progressFill.style.width = pct + '%';
+                progressText.textContent = Math.round(pct) + '%';
+            }
+
+            downloadBtn.addEventListener('click', () => {
+                if (receivedChunks.length === 0) {
+                    setStatus('⚠️ No file available.', 'error');
+                    return;
+                }
+                const blob = new Blob(receivedChunks);
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = fileName;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+                setStatus('✅ Download completed!', 'success');
+                downloadBtn.classList.remove('show');
+            });
+
+            // ===== UPLOAD (Inbox) =====
+            uploadZone.addEventListener('click', () => fileInput.click());
+
+            uploadZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                uploadZone.classList.add('dragover');
+            });
+
+            uploadZone.addEventListener('dragleave', () => {
+                uploadZone.classList.remove('dragover');
+            });
+
+            uploadZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                uploadZone.classList.remove('dragover');
+                if (e.dataTransfer.files.length > 0) {
+                    fileInput.files = e.dataTransfer.files;
+                    handleFileSelect();
+                }
+            });
+
+            fileInput.addEventListener('change', handleFileSelect);
+
+            function handleFileSelect() {
+                if (fileInput.files.length > 0) {
+                    selectedFile = fileInput.files[0];
+                    uploadFilenameDisplay.textContent = `📄 ${selectedFile.name} (${(selectedFile.size / 1024 / 1024).toFixed(2)} MB)`;
+                    uploadBtn.disabled = false;
+                    log(`📎 File selected: ${selectedFile.name} (${selectedFile.size} bytes)`);
+                } else {
+                    selectedFile = null;
+                    uploadFilenameDisplay.textContent = 'No file selected';
+                    uploadBtn.disabled = true;
+                }
+            }
+
+            // Compute SHA-256 hash in browser (for verification)
+            // Uses js-sha256 library (works on HTTP, unlike crypto.subtle)
+            // FIX: use incremental hashing (sha256.create().update().hex())
+            // instead of loading the entire file into memory and concatenating
+            // all chunks. For >100MB files this avoids a 2x memory spike
+            // (150MB chunks array + 150MB concatenated buffer) and is faster.
+            async function computeFileHash(file) {
+                return new Promise((resolve) => {
+                    const reader = new FileReader();
+                    const hasher = sha256.create();
+                    let offset = 0;
+                    const chunkSize = 256 * 1024; // 256KB
+                    
+                    reader.onload = (e) => {
+                        const chunk = new Uint8Array(e.target.result);
+                        hasher.update(chunk);
+                        offset += chunk.length;
+                        if (offset < file.size) {
+                            readNext();
+                        } else {
+                            resolve(hasher.hex());
+                        }
+                    };
+                    
+                    function readNext() {
+                        const slice = file.slice(offset, Math.min(offset + chunkSize, file.size));
+                        reader.readAsArrayBuffer(slice);
+                    }
+                    
+                    readNext();
+                });
+            }
+
+            // ===== LOCALIZATION =====
+            function getTurnSizeLimitMessage(msg) {
+                var maxSizeMb = Math.round((msg.max_size || TURN_MAX_FILE_SIZE) / 1048576);
+                var fileSizeMb = Math.round((msg.file_size || 0) / 1048576);
+                var lang = (navigator.language || 'en').toLowerCase();
+                return 'File too large (' + fileSizeMb + ' MB) for this connection (TURN limit: ' + maxSizeMb + ' MB). The connection requires a relay server (TURN) which has a bandwidth limit. Please switch to a WiFi network and retry, or reduce the file size.';
+            }
+
+            // ===== UPLOAD VIA WEBRTC (Inbox) =====
+            // FIX: accept a hashPromise so we don't block conn.on('open')
+            // with hash computation for >100MB files. The hash is computed
+            // in parallel with the PeerJS connection setup.
+            function connectToSenderForUpload(senderId, hashPromise) {
+               if (!senderId) {
+                   setStatus('❌ Error: sender ID missing.', 'error');
+                   log('❌ PeerID missing');
+                   return;
+               }
+
+               log(`🔗 Connecting to ${senderId} for upload...`);
+               setStatus('🔗 Connecting to sender...', 'loading');
+
+               // Build ICE servers from link params (same config as download mode)
+               const iceServers = buildIceServers();
+
+               const peerOptions = { config: { iceServers } };
+               if (signalHost) {
+                   const isSelfHosted = !signalHost.includes('peerjs.com');
+                   peerOptions.host = signalHost;
+                   peerOptions.port = 443;
+                   peerOptions.path = '/';
+                   peerOptions.secure = isSelfHosted;
+                   log('🔧 Signaling configured');
+               }
+
+               const uploadPeer = new Peer(peerOptions);
+
+               uploadPeer.on('open', () => {
+                   const conn = uploadPeer.connect(senderId);
+                   if (!conn) {
+                       setStatus('❌ Could not connect to sender.', 'error');
+                       log('❌ peer.connect() returned null');
+                       return;
+                   }
+
+                   // Start path detection IMMEDIATELY (before conn.on('open'))
+                   // so the stepper updates as soon as the ICE path is known,
+                   // instead of waiting for the full WebRTC channel to open.
+                   // For TURN connections this can save 5-10 seconds of
+                   // "Connecting to sender..." with no visual feedback.
+                   detectAndMarkPath(conn, selectedFile ? selectedFile.size : 0);
+
+                   conn.on('data', (data) => {
+                       if (typeof data === 'string') {
+                           try {
+                               const msg = JSON.parse(data);
+                               if (msg.type === 'upload_accepted') {
+                                   log('✅ Upload accepted by sender, starting send...');
+                                   setStatus('📤 Sending file...', 'loading');
+                                   sendFileChunks(conn, selectedFile);
+                               } else if (msg.type === 'upload_complete') {
+                                   log('✅ File saved successfully!');
+                                   setStatus(`✅ File "${selectedFile.name}" saved!`, 'success');
+                                   uploadFilenameDisplay.textContent = 'No file selected';
+                                   selectedFile = null;
+                                   fileInput.value = '';
+                                   uploadBtn.disabled = true;
+                               } else if (msg.type === 'upload_error') {
+                                   log(`❌ Error from sender: ${msg.message}`);
+                                   if (msg.reason === 'turn_size_limit') {
+                                       setStatus(getTurnSizeLimitMessage(msg), 'error');
+                                   } else {
+                                       setStatus(`❌ Error: ${msg.message}`, 'error');
+                                   }
+                                   uploadBtn.disabled = false;
+                               }
+                           } catch (e) {
+                               // Not JSON, ignore
+                           }
+                       }
+                   });
+
+                   conn.on('open', async () => {
+                       log('✅ Connection opened with sender');
+                       // Use hash computed in parallel with connection setup.
+                       // By the time the WebRTC channel opens, the hash should
+                       // already be resolved (or nearly so) for >100MB files.
+                       const fileHash = await hashPromise;
+                       const meta = {
+                           type: 'upload_file',
+                           filename: selectedFile.name,
+                           size: selectedFile.size,
+                           hash: fileHash
+                       };
+                       conn.send(JSON.stringify(meta));
+                       log('📤 File metadata sent');
+                   });
+
+                   conn.on('close', () => {
+                       log('🔌 Connection closed');
+                   });
+
+                   conn.on('error', (err) => {
+                       console.error('Connection error details:', err);
+                       setStatus('❌ Connection error. Please retry.', 'error');
+                       uploadBtn.disabled = false;
+                   });
+               });
+
+               uploadPeer.on('error', (err) => {
+                   console.error('PeerJS error details:', err);
+                   setStatus('❌ Connection error. Check the link and retry.', 'error');
+                   uploadBtn.disabled = false;
+               });
+            }
+
+            // Fixed: proper async backpressure handling
+            async function sendFileChunks(conn, file) {
+                const chunkSize = 256 * 1024; // 256KB
+                let offset = 0;
+                const totalChunks = Math.ceil(file.size / chunkSize);
+                let sentChunks = 0;
+
+                const reader = new FileReader();
+                
+                // Backpressure: wait if buffer is too full
+                async function waitForBufferLow() {
+                    if (conn.dataChannel && conn.dataChannel.bufferedAmount > 1024 * 1024) { // 1MB threshold
+                        await new Promise((resolve) => {
+                            const waitForLow = () => {
+                                conn.dataChannel.removeEventListener('bufferedamountlow', waitForLow);
+                                resolve();
+                            };
+                            conn.dataChannel.addEventListener('bufferedamountlow', waitForLow);
+                        });
+                    }
+                }
+
+                reader.onload = async (e) => {
+                    const chunk = new Uint8Array(e.target.result);
+                    
+                    // Wait for buffer to have space
+                    await waitForBufferLow();
+                    
+                    conn.send(chunk);
+                    sentChunks++;
+                    const progress = Math.round((sentChunks / totalChunks) * 100);
+                    setStatus(`📤 Sending... (${progress}%)`, 'loading');
+
+                    offset += chunk.length;
+                    if (offset < file.size) {
+                        readNextChunk();
+                    } else {
+                        // Send end marker
+                        conn.send(JSON.stringify({ type: 'upload_end' }));
+                        log('📤 File end sent, waiting for confirmation...');
+                    }
+                };
+
+                function readNextChunk() {
+                    const slice = file.slice(offset, Math.min(offset + chunkSize, file.size));
+                    reader.readAsArrayBuffer(slice);
+                }
+
+                readNextChunk();
+            }
+
+            uploadBtn.addEventListener('click', async () => {
+               if (!selectedFile) {
+                   setStatus('⚠️ Select a file before uploading.', 'error');
+                   return;
+               }
+
+               if (!senderPeerId) {
+                   setStatus('❌ Sender ID missing.', 'error');
+                   log('❌ senderPeerId not present in URL');
+                   return;
+               }
+
+               setStatus('📤 Preparing upload...', 'loading');
+               uploadBtn.disabled = true;
+               showDetecting();
+               showPhases();
+               // Determina subito la fase iniziale: se la LAN non e raggiungibile,
+               // skip direttamente a STUN senza attendere il timeout TCP.
+               if (lanBase && isLanReachable) { setPhase('lan', 'active'); } else { setPhase('stun', 'active'); }
+
+               // FIX: Start hash computation IMMEDIATELY (in parallel with LAN
+               // check and PeerJS connection setup). Previously the hash was
+               // computed inside conn.on('open'), which blocked the upload_file
+               // message for 5-10s on >100MB files. Now it runs concurrently.
+               // FIX: capture the file reference at promise creation time to
+               // prevent race conditions if the user changes the file while
+               // the hash is still being computed.
+               const fileToUpload = selectedFile;
+               const hashPromise = computeFileHash(fileToUpload).catch((err) => {
+                   log('❌ Hash computation failed: ' + (err?.message || err));
+                   setStatus('❌ Could not read the file. Please re-select it.', 'error');
+                   uploadBtn.disabled = false;
+                   throw err;
+               });
+
+               // Fallback LAN only when actually reachable: if the page is
+               // loaded from Netlify, going to a private IP would be blocked
+               // as mixed content and the TCP connect could take seconds.
+               if (lanBase && isLanReachable) {
+                   setStatus('🟢 Trying local network transfer...', 'success');
+                   const uploadUrl = lanBase + '/inbox/' + encodeURIComponent(inboxId || '') +
+                                     '?filename=' + encodeURIComponent(selectedFile.name) +
+                                     '&hash=' + encodeURIComponent(await hashPromise);
+                   log('⬆ Uploading file to local server: ' + uploadUrl);
+                   try {
+                       const controller = new AbortController();
+                       const uploadTimeout = setTimeout(() => controller.abort(), 1500);
+                       const response = await fetch(uploadUrl, {
+                           method: 'POST',
+                           body: selectedFile,
+                           signal: controller.signal
+                       });
+                       clearTimeout(uploadTimeout);
+                       if (!response.ok) {
+                           throw new Error('HTTP ' + response.status);
+                       }
+                       setPhase('lan', 'done');
+                       const result = await response.json();
+                       setStatus('✅ File uploaded successfully!', 'success');
+                       log('✅ File uploaded via LAN HTTP: ' + (result.filename || selectedFile.name));
+                       uploadFilenameDisplay.textContent = 'No file selected';
+                       selectedFile = null;
+                       fileInput.value = '';
+                       uploadBtn.disabled = true;
+                       return;
+                   } catch (fetchErr) {
+                       log('⚠️ LAN upload failed, falling back to WebRTC: ' + fetchErr.message);
+                       setPhase('lan', 'fail');
+                       setPhase('stun', 'active');
+                   }
+               hideDetecting();
+               }
+
+               hideDetecting();
+               // Connect to sender via WebRTC and send file.
+               // Pass the hash promise so it can be awaited in conn.on('open')
+               // without blocking the connection setup.
+               connectToSenderForUpload(senderPeerId, hashPromise);
+           });
+
+            // ===== INIT =====
+            setupUI();
+
+        })();
+    </script>
+</body>
+</html>

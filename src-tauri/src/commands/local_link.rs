@@ -1,0 +1,32 @@
+// Generate a local HTTP link (LAN) for a specific file
+// The link can be copied and shared on the local network.
+// Requires the HTTP server to be running.
+
+use tauri::State;
+use crate::AppState;
+use crate::utils::network::get_local_ip;
+
+/// Generate a local HTTP link for a specific file.
+/// The link can be opened by other devices on the same LAN to download the file.
+/// Returns an error if the HTTP server is not active or file not found.
+#[tauri::command]
+pub async fn generate_local_link(state: State<'_, AppState>, hash: String) -> Result<String, String> {
+    // Verifica che il server HTTP sia attivo
+    let running = *state.server_running.lock().await;
+    if !running {
+        return Err(
+            "Il server HTTP non è attivo. Avvia il server per generare il link locale.".to_string(),
+        );
+    }
+
+    // Verifica che il file esista nell'indice
+    {
+        let file_index = state.file_index.lock().await;
+        if !file_index.contains_key(&hash) {
+            return Err("File non trovato. Seleziona un file dalla lista.".to_string());
+        }
+    }
+
+    let info = get_local_ip().map_err(|e| e.to_string())?;
+    Ok(format!("http://{}:{}/download/{}", info.ip, info.port, hash))
+}

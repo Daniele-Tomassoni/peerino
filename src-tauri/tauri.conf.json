@@ -1,0 +1,25 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
+  "productName": "Peerino",
+  "version": "3.2.0",
+  "identifier": "com.peerino.app",
+  "build": {
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' wss://*.peerjs.com wss://*.metered.ca stun: stun.l.google.com:19302 stun1.l.google.com:19302 https://global.turn.metered.ca;"
+    },
+    "windows": [
+      {
+        "title": "Peerino - P2P File Sharing",
+        "width": 1280,
+        "height": 768,
+        "resizable": true
+      }
+    ]
+  }
+}

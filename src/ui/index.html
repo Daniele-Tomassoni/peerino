@@ -1,0 +1,201 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Peerino - Phase 3</title>
+    <link rel="stylesheet" href="./style.css">
+    <!-- FIX: avoid /favicon.ico 404 in the dev console. Inline data URI, no extra file. -->
+    <link rel="icon" href="data:,">
+</head>
+<body>
+    <!-- Digital grain (noise SVG overlay) -->
+    <div class="noise-overlay" aria-hidden="true"></div>
+
+    <div class="app-layout">
+        <!-- Header -->
+        <header class="app-header">
+            <h1><img src="./icons/Square71x71Logo.png" alt="Peerino" class="header-icon"> Peerino</h1>
+            <div class="header-center">
+                <button class="help-btn" aria-label="How Peerino works">
+                    <span class="help-icon">?</span>
+                    <span class="help-tooltip">
+                        <strong>How does Peerino work?</strong>
+
+                        <div class="tooltip-section">
+                            <div class="tooltip-title">📤 Send a file to someone without Peerino</div>
+                            <div class="tooltip-body">
+                                Select the file in the <em>Shared files</em> window, click <em>Generate Link</em>,
+                                copy it with the button next to it, and send it to anyone.
+                                They'll receive the file directly in their browser.
+                            </div>
+                        </div>
+
+                        <div class="tooltip-section">
+                            <div class="tooltip-title">📥 Receive a file from someone without Peerino</div>
+                            <div class="tooltip-body">
+                                Click the <em>Inbox</em> button, copy the generated link, and send it
+                                to anyone. They'll be able to send you files directly from their browser.
+                            </div>
+                        </div>
+                    </span>
+                </button>
+            </div>
+            <div class="header-right">
+                <span id="server-led" class="led-indicator led-off" title="Server Inactive">●</span>
+                <span id="server-status-text">Inactive</span>
+            </div>
+        </header>
+
+        <!-- Main Grid - 3 columns: Upload | File | Sharing -->
+        <div class="main-grid">
+            <!-- Left Column (280px): Download (Inbox) -->
+            <aside class="left-panel">
+                <section class="upload-section panel">
+                    <h2>📥 Download (Inbox)</h2>
+
+                    <!-- Drag & Drop Zone (centered) -->
+                    <div id="drop-zone" class="drop-zone">
+                        <div class="drop-zone-content">
+                            <div class="drop-icon">📤</div>
+                            <p class="drop-text">Drag files here</p>
+                            <p class="drop-hint">or</p>
+                            <button id="upload-btn" class="btn-primary">Select File</button>
+                        </div>
+                        <div id="drop-overlay" class="drop-overlay hidden">
+                            <div class="drop-overlay-content">
+                                <div class="drop-icon">📂</div>
+                                <p>Release files to upload</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <p id="upload-status" class="status"></p>
+                </section>
+
+                <!-- Download Progress Bar (separate from panel) -->
+                <div id="download-progress-container" class="progress-container hidden">
+                    <div id="download-progress-list" class="download-list"></div>
+                </div>
+            </aside>
+
+            <!-- Center Column (1fr): Shared Files -->
+            <main class="files-section panel">
+                <div class="files-header">
+                    <h2>📄 Shared Files</h2>
+                    <div class="files-toolbar">
+                        <select id="column-select" class="select-field" title="Columns">
+                            <option value="auto">Auto</option>
+                            <option value="1">1 column</option>
+                            <option value="2">2 columns</option>
+                            <option value="3">3 columns</option>
+                        </select>
+                        <select id="sort-select" class="select-field" title="Sort">
+                            <option value="name">Name (A→Z)</option>
+                            <option value="size">Size (↓)</option>
+                            <option value="date">Date (↓)</option>
+                        </select>
+                        <button id="refresh-btn" class="btn-secondary">🔄</button>
+                        <button id="open-folder-btn" class="btn-secondary">📂</button>
+                    </div>
+                </div>
+                <div id="files-list" class="files-grid">
+                    <div class="loading">Loading...</div>
+                </div>
+            </main>
+
+            <!-- Right Column (320px): Sharing -->
+            <aside class="right-panel">
+                <section class="sharing-section panel">
+                    <h2>🌐 Sharing</h2>
+
+                    <!-- Local server info (il percorso LAN viene scelto automaticamente dal link) -->
+
+                    <div id="local-context" class="context-panel">
+                        <div class="context-row">
+                            <span class="context-label">Local IP:</span>
+                            <strong id="local-ip" class="context-value">-</strong>
+                            <span id="server-led-small" class="led-indicator led-off">●</span>
+                            <span id="server-status-small">Inactive</span>
+                        </div>
+                        <!-- Il server locale si avvia automaticamente quando si genera
+                             un link o una inbox: abilita il fallback LAN nei link -->
+                        <hr class="divider">
+                    </div>
+
+                    <!-- P2P Section (always visible) -->
+                    <div class="p2p-section">
+                        <!-- NOTA: il motore PeerJS gira in background (headless):
+                             genera il PeerID necessario a Generate Link / Create Inbox.
+                             La UI di connessione manuale app-to-app è stata rimossa. -->
+                        <!-- P2P-to-Web Link with PeerID -->
+                        <div id="web-link-section" class="web-link-section">
+                            <div class="button-with-tip">
+                                <button id="generate-web-link-btn" class="btn-primary full-width">🔗 Generate Link</button>
+                                <span class="info-tip" data-tooltip="Create a smart link: the receiver automatically uses the best path (LAN, direct or relay)">ⓘ</span>
+                            </div>
+                            <div id="web-link-container" class="generated-link hidden">
+                                <div class="link-scrollable">
+                                    <span id="web-link-display" class="link-text-small"></span>
+                                </div>
+                                <button id="copy-web-link-btn" class="btn-icon-small" title="Copy Link">📋</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <hr class="divider">
+
+                    <!-- Unified Inbox: il link sceglie da solo LAN / STUN / TURN -->
+                    <div id="internet-inbox-section" class="inbox-section">
+                        <div class="button-with-tip">
+                            <button id="create-inbox-internet-btn" class="btn-primary full-width">📥 Create Inbox</button>
+                            <span class="info-tip" data-tooltip="Receive files from anyone: the link automatically uses the best path (LAN, direct or relay)">ⓘ</span>
+                        </div>
+                        <div id="inbox-internet-link-container" class="generated-link hidden">
+                            <div class="link-scrollable">
+                                <span id="inbox-internet-link" class="link-text-small"></span>
+                            </div>
+                            <button id="copy-inbox-internet-link-btn" class="btn-icon-small" title="Copy Link">📋</button>
+                        </div>
+                    </div>
+
+                </section>
+
+                <!-- Upload Progress (separate from panel) -->
+                <div id="upload-progress-container" class="progress-container">
+                    <div id="upload-progress-list" class="upload-list"></div>
+                </div>
+            </aside>
+        </div>
+
+        <!-- Recent Transfers (same width as Shared Files) -->
+        <section class="recent-transfers panel" style="margin-left: 300px; margin-right: 340px;">
+            <h2>Recent Transfers</h2>
+            <div class="recent-transfers-split">
+                <div class="recent-column">
+                    <h3>Downloads</h3>
+                    <div id="recent-downloads-list" class="recent-list">
+                        <div class="recent-empty">No downloads yet</div>
+                    </div>
+                </div>
+                <div class="recent-column">
+                    <h3>Uploads</h3>
+                    <div id="recent-uploads-list" class="recent-list">
+                        <div class="recent-empty">No uploads yet</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="app-footer">
+            <p id="footer-status" class="status"></p>
+        </footer>
+    </div>
+
+    <!-- Tooltip globale per i LED di connessione (position:fixed, mai tagliato dai contenitori) -->
+    <div id="conn-tooltip" class="conn-tooltip" role="tooltip"></div>
+
+    <script type="module" src="./app.ts"></script>
+</body>
+</html>

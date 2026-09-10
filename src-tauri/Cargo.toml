@@ -1,0 +1,57 @@
+[package]
+name = "Peerino"
+version = "3.2.0"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.0", features = ["default"] }
+tauri-plugin-dialog = "2.0"
+tauri-plugin-clipboard-manager = "2.0"
+tauri-plugin-notification = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+rusqlite = { version = "0.31", features = ["bundled"] }
+tokio = { version = "1.35", features = ["full"] }
+tokio-util = "0.7"
+sha2 = "0.10"
+hex = "0.4"
+anyhow = "1.0"
+thiserror = "1.0"
+chrono = "0.4"
+log = "0.4"
+env_logger = "0.10"
+dotenvy = "0.15"
+
+# HTTP Server (Fase 2)
+axum = "0.7"
+tower = "0.4"
+tower-http = { version = "0.5", features = ["fs", "cors", "trace", "timeout"] }
+tokio-stream = "0.1"
+futures-util = "0.3"
+
+# Open folder in file manager
+open = "5.0"
+
+# Base64 for P2P file streaming and TURN credentials
+base64 = "0.22"
+
+# HMAC-SHA1 for ephemeral TURN credentials (coturn REST API scheme)
+hmac = "0.12"
+sha1 = "0.10"
+
+# UUID for link generation
+uuid = { version = "1.6", features = ["v4"] }
+
+# URL encoding for P2P-to-Web links
+urlencoding = "2.1"
+
+# HTTP client for fetching TURN credentials from external providers
+# (e.g. metered.ca REST API). rustls evita la dipendenza da OpenSSL.
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+
+[dev-dependencies]
+tempfile = "3.0"
+tauri = { version = "2.0", features = ["test"] }

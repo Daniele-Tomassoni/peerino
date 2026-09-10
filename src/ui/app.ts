@@ -1,0 +1,2415 @@
+import { invoke } from '@tauri-apps/api/core';
+import { open } from '@tauri-apps/plugin-dialog';
+import { writeText } from '@tauri-apps/plugin-clipboard-manager';
+import { sendNotification } from '@tauri-apps/plugin-notification';
+import { listen } from '@tauri-apps/api/event';
+import { Peer, DataConnection } from 'peerjs';
+
+// Global error handler
+window.addEventListener('error', (event) => {
+    console.error('🔥 GLOBAL ERROR:', event.error);
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+    console.error('🔥 PROMISE REJECTED:', event.reason);
+});
+
+// Interfaces
+interface FileInfo {
+    filename: string;
+    size: number;
+    hash: string;
+    uploaded_at: string;
+}
+
+interface NetworkInfo {
+    ip: string;
+    port: number;
+}
+
+interface DownloadProgress {
+    hash: string;
+    filename: string;
+    total_bytes: number;
+    downloaded_bytes: number;
+    speed_mbps: number;
+    peer_ip: string;
+    progress: number;
+    cancelled: boolean;
+}
+
+interface UploadProgress {
+    hash?: string;
+    filename: string;
+    bytes_processed: number;
+    total_bytes: number;
+    progress: number;
+    speed_mbps?: number;
+    peer_id?: string;
+    cancelled: boolean;
+}
+
+interface PeerInfo {
+    peer_id: string;
+}
+
+interface P2pConfig {
+    signalingUrl?: string;
+    turnUsername?: string;
+    turnPassword?: string;
+}
+
+declare global {
+    interface Window {
+        fileMap: Map<string, FileInfo>;
+    }
+}
+window.fileMap = new Map<string, FileInfo>();
+
+// DOM Elements - Header
+const serverLed = document.getElementById('server-led') as HTMLSpanElement;
+const serverStatusText = document.getElementById('server-status-text') as HTMLParagraphElement;
+
+// DOM Elements - Upload (left column)
+const uploadBtn = document.getElementById('upload-btn') as HTMLButtonElement;
+const uploadStatus = document.getElementById('upload-status') as HTMLParagraphElement;
+const dropZone = document.getElementById('drop-zone') as HTMLDivElement;
+const dropOverlay = document.getElementById('drop-overlay') as HTMLDivElement;
+
+// Progress bar download (left column - shows inbox downloads)
+const downloadProgressContainerLeft = document.getElementById('download-progress-container') as HTMLDivElement;
+
+// DOM Elements - File (center column)
+const filesList = document.getElementById('files-list') as HTMLDivElement;
+const refreshBtn = document.getElementById('refresh-btn') as HTMLButtonElement;
+const openFolderBtn = document.getElementById('open-folder-btn') as HTMLButtonElement;
+const columnSelect = document.getElementById('column-select') as HTMLSelectElement;
+const sortSelect = document.getElementById('sort-select') as HTMLSelectElement;
+
+// DOM Elements - Sharing (right column)
+const localIpEl = document.getElementById('local-ip') as HTMLSpanElement;
+const serverLedSmall = document.getElementById('server-led-small') as HTMLSpanElement;
+const serverStatusSmall = document.getElementById('server-status-small') as HTMLParagraphElement;
+const startServerBtn = document.getElementById('start-server-btn') as HTMLButtonElement;
+const myPeerIdEl = document.getElementById('my-peer-id') as HTMLSpanElement;
+const copyPeerIdBtn = document.getElementById('copy-peer-id-btn') as HTMLButtonElement;
+const relayStatusEl = document.getElementById('relay-status') as HTMLSpanElement;
+const remotePeerIdInput = document.getElementById('remote-peer-id') as HTMLInputElement;
+const connectPeerBtn = document.getElementById('connect-peer-btn') as HTMLButtonElement;
+const disconnectPeerBtn = document.getElementById('disconnect-peer-btn') as HTMLButtonElement;
+const connectionStatusEl = document.getElementById('connection-status') as HTMLDivElement;
+const connectionStatusText = document.getElementById('connection-status-text') as HTMLSpanElement;
+const peersListEl = document.getElementById('peers-list') as HTMLUListElement;
+
+// P2P-to-Web Link elements
+const generateWebLinkBtn = document.getElementById('generate-web-link-btn') as HTMLButtonElement;
+const webLinkContainer = document.getElementById('web-link-container') as HTMLDivElement;
+const webLinkDisplay = document.getElementById('web-link-display') as HTMLSpanElement;
+const copyWebLinkBtn = document.getElementById('copy-web-link-btn') as HTMLButtonElement;
+
+const streamingToggle = document.getElementById('streaming-toggle') as HTMLInputElement;
+
+// Local Inbox
+const createInboxLocalBtn = document.getElementById('create-inbox-local-btn') as HTMLButtonElement;
+const inboxLocalLinkContainer = document.getElementById('inbox-local-link-container') as HTMLDivElement;
+const inboxLocalLinkEl = document.getElementById('inbox-local-link') as HTMLSpanElement;
+const copyInboxLocalLinkBtn = document.getElementById('copy-inbox-local-link-btn') as HTMLButtonElement;
+
+// Internet Inbox
+const createInboxInternetBtn = document.getElementById('create-inbox-internet-btn') as HTMLButtonElement;
+const inboxInternetLinkContainer = document.getElementById('inbox-internet-link-container') as HTMLDivElement;
+const inboxInternetLinkEl = document.getElementById('inbox-internet-link') as HTMLSpanElement;
+const copyInboxInternetLinkBtn = document.getElementById('copy-inbox-internet-link-btn') as HTMLButtonElement;
+
+// Generate Local Link
+const generateLocalLinkBtn = document.getElementById('generate-local-link-btn') as HTMLButtonElement;
+const localLinkContainer = document.getElementById('local-link-container') as HTMLDivElement;
+const localLinkDisplay = document.getElementById('local-link-display') as HTMLSpanElement;
+const copyLocalLinkBtn = document.getElementById('copy-local-link-btn') as HTMLButtonElement;
+
+// Download progress list (ALWAYS VISIBLE) - left column (inbox downloads)
+const downloadProgressListLeft = document.getElementById('download-progress-list') as HTMLDivElement;
+
+// Upload progress list (right column - shows P2P/HTTP uploads)
+const uploadProgressContainerRight = document.getElementById('upload-progress-container') as HTMLDivElement;
+const uploadProgressListRight = document.getElementById('upload-progress-list') as HTMLDivElement;
+
+// Footer
+const footerStatus = document.getElementById('footer-status') as HTMLParagraphElement;
+
+// State
+let serverRunning = false;
+let currentNetworkInfo: NetworkInfo | null = null;
+let currentContext: 'local' | 'internet' = 'local';
+const copiedLinkFiles = new Map<string, number>();
+
+// P2P
+let p2pConfig: P2pConfig = {
+    signalingUrl: '0.peerjs.com',
+};
+let peer: Peer | null = null;
+let currentPeerId: string | null = null;
+let connections: Map<string, DataConnection> = new Map();
+let reconnectAttempts = 0;
+let persistentIdRetryAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 10;
+const MAX_PERSISTENT_ID_RETRIES = 5;
+const PERSISTENT_ID_RETRY_DELAY = 5000;
+
+// Incoming file transfer state (for P2P-to-P2P downloads)
+interface IncomingFile {
+    filename: string;
+    size: number;
+    hash: string;
+    chunks: Map<number, Uint8Array>;
+    receivedBytes: number;
+    /** Timestamp di inizio trasferimento (per calcolo velocità reale) */
+    startTime: number;
+}
+const incomingFiles = new Map<string, IncomingFile>();
+
+// Incoming upload state (for Reverse Inbox) - incremental write to disk
+interface IncomingUpload {
+    filename: string;
+    size: number;
+    expectedHash: string;
+    receivedBytes: number;
+    /** Timestamp di inizio trasferimento (per calcolo velocità reale) */
+    startTime: number;
+    /** Flag per prevenire doppie finalizzazioni (upload_end vs auto-finalize) */
+    finalized: boolean;
+    /** FIX: idempotenza upload_complete. Impedisce doppio invio se sia
+     *  upload_end che auto-finalizzazione cercano di confermare. */
+    uploadCompleteSent: boolean;
+}
+const incomingUploads = new Map<string, IncomingUpload>();
+
+// FIX: helper idempotente per inviare upload_complete al browser.
+// Garantisce che il messaggio venga inviato una sola volta, indipendentemente
+// dal percorso (upload_end handler o auto-finalizzazione).
+function sendUploadComplete(conn: DataConnection, upload: IncomingUpload): void {
+    if (upload.uploadCompleteSent) {
+        log('ℹ️ upload_complete already sent, skipping');
+        return;
+    }
+    upload.uploadCompleteSent = true;
+    try {
+        conn.send(JSON.stringify({ type: 'upload_complete' }));
+        log('✅ upload_complete sent to browser');
+    } catch (e) {
+        log('❌ Could not send upload_complete: ' + getErrorMessage(e));
+    }
+}
+
+// Per-peer message queue for serialization (avoids race condition: upload_end before last append)
+const uploadMessageQueues = new Map<string, Promise<void>>();
+
+// Track active WebRTC downloads to prevent duplicate progress bars
+const activeWebRtcDownloads = new Set<string>();
+
+// Track all active downloads for multi-download display
+const activeDownloads = new Map<string, DownloadProgress>();
+
+// Track all active uploads for multi-upload display
+const activeUploads = new Map<string, UploadProgress>();
+
+// Recent transfers log (resets on app restart - in-memory only)
+interface TransferRecord {
+    type: 'upload' | 'download';
+    filename: string;
+    size: number;
+    timestamp: number;
+}
+const recentTransfers: TransferRecord[] = [];
+const MAX_RECENT_TRANSFERS = 50;
+
+// ---------- Connection path detection (LED verde/giallo TURN) ----------
+// Percorso connessione per chiave di trasferimento:
+// 'direct' = P2P diretto (host/srflx, nessun consumo banda server)
+// 'turn'   = traffico instradato dal relay TURN (~2x la dimensione del file)
+const connectionPaths = new Map<string, 'direct' | 'turn'>();
+
+const TOOLTIP_DIRECT = "Files don't consume server bandwidth. You can send files of any size.";
+const TOOLTIP_TURN = "This file is consuming server bandwidth. Consumption is about twice the file size.";
+
+/**
+ * Rileva il percorso della connessione WebRTC tramite getStats().
+ * La catena corretta è: candidate-pair selezionata -> local/remoteCandidateId
+ * -> candidateType di ciascun candidato (il campo "candidateTypeLocal"
+ * NON esiste nelle stats standard).
+ * - 'turn'   -> almeno UNO dei due lati è un candidato relay
+ * - 'direct' -> host/srflx/prflx (STUN scopre solo l'indirizzo, non trasporta dati)
+ * - null     -> stats non disponibili (badge resta nascosto)
+ */
+async function detectConnectionPath(conn: DataConnection): Promise<'direct' | 'turn' | null> {
+    try {
+        // PeerJS espone la RTCPeerConnection come proprietà pubblica;
+        // fallback su _pc per robustezza tra versioni.
+        const pc: RTCPeerConnection | null =
+            (conn as any).peerConnection ?? (conn as any)._pc ?? null;
+        if (!pc) return null;
+
+        const stats = await pc.getStats();
+        let pair: any = null;
+        stats.forEach((report: any) => {
+            if (report.type === 'candidate-pair' &&
+                (report.selected === true || report.nominated === true || report.state === 'succeeded')) {
+                pair = pair ?? report;
+            }
+        });
+        if (!pair?.localCandidateId || !pair?.remoteCandidateId) return null;
+
+        // RTCStatsReport implementa Map ma alcune versioni di lib.dom non lo tipizzano
+        const statsMap = stats as unknown as Map<string, any>;
+        const local = statsMap.get(pair.localCandidateId);
+        const remote = statsMap.get(pair.remoteCandidateId);
+        const isRelay = !!local && !!remote &&
+            (local.candidateType === 'relay' || remote.candidateType === 'relay');
+        return isRelay ? 'turn' : 'direct';
+    } catch {
+        return null;
+    }
+}
+
+/** Aggiorna il badge LED di una riga di trasferimento in base al percorso noto.
+ *  fileSize: opzionale. Se passato e path === 'turn' e fileSize > TURN_MAX_FILE_SIZE,
+ *  il badge diventa rosso con messaggio di limite superato.
+ */
+function applyConnBadge(badge: HTMLElement | null, key: string, fileSize?: number): void {
+    if (!badge) return;
+    const path = connectionPaths.get(key);
+    if (path === 'turn') {
+        // TURN: verde se file entro limite, rosso se sopra.
+        // Recupera limite corrente dal backend (cached in memoria).
+        const turnMax = (window as any).__turnMaxFileSize || 100 * 1024 * 1024;
+        if (fileSize !== undefined && fileSize > turnMax) {
+            badge.className = 'conn-badge turn-overlimit';
+            badge.setAttribute('data-tooltip',
+                'This file exceeds the TURN size limit (' + formatSize(turnMax) +
+                '). Connect to WiFi or reduce file size to transfer.');
+        } else {
+            badge.className = 'conn-badge turn';
+            badge.setAttribute('data-tooltip', TOOLTIP_TURN);
+        }
+    } else if (path === 'direct') {
+        badge.className = 'conn-badge direct';
+        badge.setAttribute('data-tooltip', TOOLTIP_DIRECT);
+    }
+    // path undefined: badge invisibile (negoziazione ICE in corso o stats assenti)
+}
+
+// ---------- Tooltip globale dei LED ----------
+// Un unico elemento position:fixed sul body: non viene tagliato dall'overflow
+// dei pannelli con scroll e viene posizionato sempre dentro il viewport.
+const connTooltipEl = document.getElementById('conn-tooltip');
+
+function hideConnTooltip(): void {
+    connTooltipEl?.classList.remove('visible');
+}
+
+function showConnTooltip(badge: HTMLElement): void {
+    if (!connTooltipEl) return;
+    const text = badge.getAttribute('data-tooltip');
+    if (!text) return;
+
+    connTooltipEl.textContent = text;
+    connTooltipEl.classList.add('visible');
+
+    // Posiziona rispetto al viewport (misura dopo il render del testo)
+    const rect = badge.getBoundingClientRect();
+    const tw = connTooltipEl.offsetWidth;
+    const th = connTooltipEl.offsetHeight;
+
+    // Orizzontale: allineato al bordo sinistro del LED, limitato ai bordi schermo
+    let left = Math.max(8, Math.min(rect.left, window.innerWidth - tw - 8));
+    // Verticale: sopra il LED; se non c'è spazio, sotto
+    let top = rect.top - th - 10;
+    if (top < 8) top = rect.bottom + 10;
+
+    connTooltipEl.style.left = `${left}px`;
+    connTooltipEl.style.top = `${top}px`;
+}
+
+// Listener delegati: le righe di trasferimento sono create/rimosse dinamicamente
+document.addEventListener('mouseover', (event) => {
+    const target = event.target as HTMLElement | null;
+    const badge = target?.closest?.('.conn-badge');
+    if (badge) showConnTooltip(badge as HTMLElement);
+});
+document.addEventListener('mouseout', (event) => {
+    const target = event.target as HTMLElement | null;
+    if (target?.closest?.('.conn-badge')) hideConnTooltip();
+});
+// Nascondi il tooltip se la finestra cambia dimensioni (posizione non più valida)
+window.addEventListener('resize', hideConnTooltip);
+
+// ---------- Utility ----------
+function escapeHtml(text: string): string {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function getErrorMessage(error: unknown): string {
+    if (typeof error === 'string') return error;
+    if (error instanceof Error) return error.message;
+    if (error && typeof error === 'object' && 'message' in error) {
+        return String((error as { message: unknown }).message);
+    }
+    return 'Unknown error';
+}
+
+function formatSize(bytes: number): string {
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    const size = bytes / Math.pow(k, i);
+    return `${size.toFixed(1)} ${units[i]}`;
+}
+
+function formatDate(dateString: string): string {
+    try {
+        const date = new Date(dateString);
+        if (isNaN(date.getTime())) return 'Unknown date';
+        return date.toLocaleDateString('en-US', {
+            day: '2-digit', month: '2-digit', year: 'numeric',
+            hour: '2-digit', minute: '2-digit',
+        });
+    } catch {
+        return 'Unknown date';
+    }
+}
+
+function showNotification(title: string, body: string): void {
+    try {
+        sendNotification({ title, body });
+    } catch (error) {
+        console.error('Error sending notification:', error);
+    }
+}
+
+function updateServerLed(running: boolean): void {
+    serverRunning = running;
+    const cls = running ? 'led-on' : 'led-off';
+    const txt = running ? 'Active' : 'Inactive';
+    if (serverLed) {
+        serverLed.className = `led-indicator ${cls}`;
+        serverStatusText.textContent = txt;
+    }
+    if (serverLedSmall) {
+        serverLedSmall.className = `led-indicator ${cls}`;
+        serverStatusSmall.textContent = txt;
+    }
+}
+
+// ---------- Upload Progress (hidden until there are uploads) ----------
+// NOTE: each row is created ONCE per transfer key and then updated IN PLACE.
+// Rebuilding the whole list with innerHTML on every progress event replaced
+// the cancel button between mousedown and mouseup, so single clicks were
+// silently dropped (the click event fired on the container, not the button).
+function renderUploadProgressList(): void {
+    if (!uploadProgressListRight) return;
+
+    if (activeUploads.size === 0) {
+        // Hide the container when there are no uploads
+        if (uploadProgressContainerRight) {
+            uploadProgressContainerRight.classList.add('hidden');
+        }
+        // Show empty state message
+        uploadProgressListRight.innerHTML = '<div class="download-item no-downloads">Nessun upload in corso</div>';
+        return;
+    }
+
+    // Show the container when there are uploads
+    if (uploadProgressContainerRight) {
+        uploadProgressContainerRight.classList.remove('hidden');
+    }
+
+    // Remove the empty-state message if present
+    const emptyMsg = uploadProgressListRight.querySelector('.no-downloads');
+    if (emptyMsg) emptyMsg.remove();
+
+    // Index existing rows by key so they can be updated in place
+    const staleRows = new Map<string, HTMLElement>();
+    uploadProgressListRight.querySelectorAll<HTMLElement>('.upload-item').forEach(row => {
+        const id = row.getAttribute('data-upload-id');
+        if (id) staleRows.set(id, row);
+    });
+
+    for (const [key, u] of activeUploads) {
+        const progress = u.total_bytes > 0 ? Math.min(u.progress, 100) : 0;
+        // speed_mbps is provided by the backend (elapsed-time based); never fake it
+        // with bytes_processed (that would show the file SIZE as the speed).
+        const speed = u.speed_mbps ?? 0;
+        const progressText = u.total_bytes === 0 ? '…' : `${Math.round(progress)}%`;
+
+        let row = staleRows.get(key);
+        if (!row) {
+            // Create the row skeleton once; fields are updated below via textContent
+            row = document.createElement('div');
+            row.className = 'upload-item';
+            row.setAttribute('data-upload-id', key);
+            row.innerHTML = `
+                <div class="download-header">
+                    <span class="conn-badge" data-tooltip="${TOOLTIP_DIRECT}"></span>
+                    <span class="download-filename"></span>
+                    <span class="download-percentage"></span>
+                    <button class="cancel-btn" title="Annulla upload">✕</button>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill"></div>
+                </div>
+                <div class="download-details">
+                    <span></span>
+                    <span></span>
+                </div>
+            `;
+            uploadProgressListRight.appendChild(row);
+        }
+        staleRows.delete(key);
+
+        // In-place field updates (the cancel button node is NEVER replaced)
+        const filenameEl = row.querySelector<HTMLElement>('.download-filename');
+        if (filenameEl) filenameEl.textContent = u.filename;
+        const percentageEl = row.querySelector<HTMLElement>('.download-percentage');
+        if (percentageEl) percentageEl.textContent = progressText;
+        const cancelBtn = row.querySelector<HTMLButtonElement>('.cancel-btn');
+        if (cancelBtn) cancelBtn.setAttribute('data-upload-key', key);
+        const fillEl = row.querySelector<HTMLElement>('.progress-fill');
+        if (fillEl) fillEl.style.width = `${progress}%`;
+        const detailEls = row.querySelectorAll<HTMLElement>('.download-details span');
+        if (detailEls[0]) detailEls[0].textContent = `${formatSize(u.bytes_processed)} / ${formatSize(u.total_bytes)}`;
+        if (detailEls[1]) detailEls[1].textContent = `${speed.toFixed(1)} MB/s`;
+
+        // LED connessione (verde = diretto, giallo = TURN, rosso = sopra limite)
+        // FIX: pass u.total_bytes so the SENDER's badge also turns red when the
+        // file exceeds the TURN size limit. Previously only the browser receiver
+        // (web-receiver.html) got the red error message; the sender's UI was silent.
+        applyConnBadge(row.querySelector<HTMLElement>('.conn-badge'), key, u.total_bytes);
+    }
+
+    // FIX: SENDER feedback for TURN size limit. When a badge is red (overlimit),
+    // show a status message in the footer so the sender knows the transfer was
+    // blocked. The browser receiver already shows the error, but the sender's UI
+    // had no indication.
+    const turnOverlimitRows = uploadProgressListRight.querySelectorAll<HTMLElement>('.conn-badge.turn-overlimit');
+    if (turnOverlimitRows.length > 0) {
+        const firstRow = turnOverlimitRows[0].closest<HTMLElement>('.upload-item');
+        if (firstRow && !firstRow.classList.contains('turn-limit-warned')) {
+            firstRow.classList.add('turn-limit-warned');
+            const filename = firstRow.querySelector<HTMLElement>('.download-filename')?.textContent || '';
+            if (footerStatus) {
+                footerStatus.textContent = '⚠️ File exceeds TURN size limit: ' + filename;
+                footerStatus.className = 'status warning';
+            }
+        }
+    } else {
+        // Clear any previous TURN limit warning if no overlimit rows remain
+        const warned = uploadProgressListRight.querySelector<HTMLElement>('.upload-item.turn-limit-warned');
+        if (warned && footerStatus && footerStatus.textContent.startsWith('⚠️ File exceeds')) {
+            footerStatus.textContent = '';
+            footerStatus.className = 'status';
+        }
+    }
+
+    // Remove rows whose transfer is no longer active
+    staleRows.forEach(row => row.remove());
+}
+
+// ---------- Download Progress (left column - shows inbox downloads) ----------
+function resetDownloadProgress(): void {
+    if (downloadProgressListLeft) {
+        downloadProgressListLeft.innerHTML = '<div class="download-item no-downloads"><span class="download-filename">No downloads in progress</span></div>';
+    }
+    if (downloadProgressContainerLeft) {
+        downloadProgressContainerLeft.classList.add('hidden');
+    }
+}
+
+function showDownloadActive(filename: string): void {
+    // No longer needed - downloads are shown directly in the list
+}
+
+function updateDownloadProgress(downloads: DownloadProgress[]): void {
+    if (!downloads || downloads.length === 0) {
+        resetDownloadProgress();
+        return;
+    }
+
+    if (!downloadProgressListLeft) return;
+
+    // Show the download progress container when there are active downloads
+    if (downloadProgressContainerLeft) {
+        downloadProgressContainerLeft.classList.remove('hidden');
+    }
+
+    // Remove the empty-state message if present
+    const emptyMsg = downloadProgressListLeft.querySelector('.no-downloads');
+    if (emptyMsg) emptyMsg.remove();
+
+    // Index existing rows by hash so they can be updated in place
+    const staleRows = new Map<string, HTMLElement>();
+    downloadProgressListLeft.querySelectorAll<HTMLElement>('.download-item').forEach(row => {
+        const id = row.getAttribute('data-download-id');
+        if (id) staleRows.set(id, row);
+    });
+
+    for (const d of downloads) {
+        const eta = d.speed_mbps > 0
+            ? Math.ceil((d.total_bytes - d.downloaded_bytes) / (1024 * 1024) / d.speed_mbps)
+            : 0;
+
+        let row = staleRows.get(d.hash);
+        if (!row) {
+            // Create the row skeleton once; fields are updated below via textContent
+            row = document.createElement('div');
+            row.className = 'download-item';
+            row.setAttribute('data-download-id', d.hash);
+            row.innerHTML = `
+                <div class="download-header">
+                    <span class="conn-badge" data-tooltip="${TOOLTIP_DIRECT}"></span>
+                    <span class="download-filename"></span>
+                    <span class="download-percentage"></span>
+                    <button class="cancel-btn" title="Annulla download">✕</button>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill"></div>
+                </div>
+                <div class="download-details">
+                    <span></span>
+                    <span></span>
+                </div>
+            `;
+            downloadProgressListLeft.appendChild(row);
+        }
+        staleRows.delete(d.hash);
+
+        // In-place field updates (the cancel button node is NEVER replaced)
+        const filenameEl = row.querySelector<HTMLElement>('.download-filename');
+        if (filenameEl) filenameEl.textContent = d.filename;
+        const percentageEl = row.querySelector<HTMLElement>('.download-percentage');
+        if (percentageEl) percentageEl.textContent = `${Math.round(d.progress)}%`;
+        const cancelBtn = row.querySelector<HTMLButtonElement>('.cancel-btn');
+        if (cancelBtn) cancelBtn.setAttribute('data-download-key', d.hash);
+        const fillEl = row.querySelector<HTMLElement>('.progress-fill');
+        if (fillEl) fillEl.style.width = `${Math.min(Math.round(d.progress), 100)}%`;
+        const detailEls = row.querySelectorAll<HTMLElement>('.download-details span');
+        if (detailEls[0]) detailEls[0].textContent = `${formatSize(d.downloaded_bytes)} / ${formatSize(d.total_bytes)}`;
+        if (detailEls[1]) detailEls[1].textContent = `${d.speed_mbps.toFixed(1)} MB/s • ${eta}s`;
+
+        // LED connessione (verde = diretto, giallo = TURN, rosso = sopra limite)
+        // FIX: pass d.total_bytes so the red badge also appears on the RECEIVER's
+        // download progress bar when the file exceeds the TURN size limit.
+        applyConnBadge(row.querySelector<HTMLElement>('.conn-badge'), d.hash, d.total_bytes);
+    }
+
+    // Remove rows whose transfer is no longer active
+    staleRows.forEach(row => row.remove());
+}
+
+// ---------- Recent Transfers (log, resets on restart) ----------
+function addRecentTransfer(type: 'upload' | 'download', filename: string, size: number): void {
+    recentTransfers.unshift({
+        type,
+        filename,
+        size,
+        timestamp: Date.now()
+    });
+    // Keep only the most recent MAX_RECENT_TRANSFERS entries
+    if (recentTransfers.length > MAX_RECENT_TRANSFERS) {
+        recentTransfers.length = MAX_RECENT_TRANSFERS;
+    }
+    renderRecentTransfers();
+}
+
+function renderRecentItem(t: TransferRecord, now: number, twoMin: number): string {
+    const icon = t.type === 'upload' ? '⬆️' : '⬇️';
+    const label = t.type === 'upload' ? 'Upload' : 'Download';
+    const time = new Date(t.timestamp).toLocaleTimeString('it-IT', {
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+    // Highlight transfers made in the last 2 minutes
+    const freshClass = (now - t.timestamp) < twoMin ? ' recent-fresh' : '';
+    return `
+        <div class="recent-item recent-${t.type}${freshClass}">
+            <span class="recent-icon">${icon}</span>
+            <span class="recent-label">${label}</span>
+            <span class="recent-filename" title="${escapeHtml(t.filename)}">${escapeHtml(t.filename)}</span>
+            <span class="recent-size">${formatSize(t.size)}</span>
+            <span class="recent-time">${time}</span>
+        </div>
+    `;
+}
+
+function renderRecentTransfers(): void {
+    const downloadsEl = document.getElementById('recent-downloads-list');
+    const uploadsEl = document.getElementById('recent-uploads-list');
+    if (!downloadsEl || !uploadsEl) return;
+
+    const now = Date.now();
+    const TWO_MIN = 2 * 60 * 1000;
+
+    const downloads = recentTransfers.filter(t => t.type === 'download');
+    const uploads = recentTransfers.filter(t => t.type === 'upload');
+
+    downloadsEl.innerHTML = downloads.length === 0
+        ? '<div class="recent-empty">No downloads yet</div>'
+        : downloads.map(t => renderRecentItem(t, now, TWO_MIN)).join('');
+
+    uploadsEl.innerHTML = uploads.length === 0
+        ? '<div class="recent-empty">No uploads yet</div>'
+        : uploads.map(t => renderRecentItem(t, now, TWO_MIN)).join('');
+}
+
+// ---------- File list (columns + sorting) ----------
+function getFilesFromMap(): FileInfo[] {
+    return Array.from(window.fileMap.values());
+}
+
+function sortFiles(files: FileInfo[], sortBy: string): FileInfo[] {
+    const sorted = [...files];
+    if (sortBy === 'name') {
+        sorted.sort((a, b) => a.filename.localeCompare(b.filename));
+    } else if (sortBy === 'size') {
+        sorted.sort((a, b) => b.size - a.size);
+    } else if (sortBy === 'date') {
+        sorted.sort((a, b) => b.uploaded_at.localeCompare(a.uploaded_at));
+    }
+    return sorted;
+}
+
+function applyColumnLayout(): void {
+    const value = columnSelect.value;
+    filesList.classList.remove('cols-1', 'cols-2', 'cols-3');
+    if (value === '1' || value === '2' || value === '3') {
+        filesList.classList.add(`cols-${value}`);
+    }
+}
+
+async function loadFiles(): Promise<void> {
+    filesList.innerHTML = '<div class="loading">⏳ Loading...</div>';
+    try {
+        const files = await invoke<FileInfo[]>('list_files');
+        if (!files || files.length === 0) {
+            filesList.innerHTML = '<div class="loading">📂 No shared files</div>';
+            return;
+        }
+        window.fileMap = new Map<string, FileInfo>();
+        files.forEach(f => window.fileMap.set(f.hash, f));
+        renderFiles();
+    } catch (error) {
+        filesList.innerHTML = `<div class="loading">❌ Error: ${getErrorMessage(error)}</div>`;
+    }
+}
+
+async function handleRefresh(): Promise<void> {
+    filesList.innerHTML = '<div class="loading">⏳ Refreshing...</div>';
+    try {
+        const files = await invoke<FileInfo[]>('refresh_files');
+        if (!files || files.length === 0) {
+            filesList.innerHTML = '<div class="loading">📂 No shared files</div>';
+            return;
+        }
+        window.fileMap = new Map<string, FileInfo>();
+        files.forEach(f => window.fileMap.set(f.hash, f));
+        renderFiles();
+    } catch (error) {
+        filesList.innerHTML = `<div class="loading">❌ Error: ${getErrorMessage(error)}</div>`;
+    }
+}
+
+function renderFiles(): void {
+    const sortBy = sortSelect.value || 'name';
+    const sorted = sortFiles(getFilesFromMap(), sortBy);
+    applyColumnLayout();
+
+    if (sorted.length === 0) {
+        filesList.innerHTML = '<div class="loading">📂 No shared files</div>';
+        return;
+    }
+
+    filesList.innerHTML = sorted.map(file => {
+        const now = Date.now();
+        const copiedTime = copiedLinkFiles.get(file.hash);
+        const isCopied = copiedTime && (now - copiedTime < 10000);
+        const statusIcon = isCopied ? '✅' : '📄';
+        return `
+            <div class="file-item" data-hash="${escapeHtml(file.hash)}">
+                <div class="file-info">
+                    <div class="file-name">${escapeHtml(file.filename)}</div>
+                    <div class="file-meta">${formatSize(file.size)} • ${formatDate(file.uploaded_at)}</div>
+                </div>
+                <span class="file-status">${statusIcon}</span>
+            </div>
+        `;
+    }).join('');
+
+    document.querySelectorAll('.file-item').forEach(item => {
+        item.addEventListener('click', () => {
+            const hash = (item as HTMLElement).dataset.hash;
+            if (hash) {
+                document.querySelectorAll('.file-item').forEach(i => i.classList.remove('selected'));
+                item.classList.add('selected');
+            }
+        });
+    });
+}
+
+// ---------- Upload ----------
+async function handleUpload(filePath: string): Promise<void> {
+    uploadBtn.disabled = true;
+    uploadBtn.textContent = '⏳ Loading...';
+    uploadStatus.className = 'status';
+    const filename = filePath.split(/[\\/]/).pop() || 'file';
+    console.log('[DEBUG upload] handleUpload -> register_file (right-column progress NOT wired for this path)');
+
+    try {
+        uploadStatus.textContent = '📁 Processing file...';
+        const hash = await invoke<string>('register_file', { filePath });
+
+        uploadStatus.textContent = `✅ ${filename} uploaded successfully! (Hash: ${hash.substring(0, 16)}...)`;
+        uploadStatus.className = 'status success';
+        showNotification('Upload complete', `${filename} has been uploaded successfully`);
+        addRecentTransfer('download', filename, 0);
+        await loadFiles();
+    } catch (error) {
+        console.error('Error in handleUpload:', error);
+        uploadStatus.textContent = `❌ Error: ${getErrorMessage(error)}`;
+        uploadStatus.className = 'status error';
+        showNotification('Upload error', getErrorMessage(error));
+    } finally {
+        uploadBtn.disabled = false;
+        uploadBtn.textContent = '📤 Select File';
+    }
+}
+
+async function handleSelectFile(): Promise<void> {
+    try {
+        const filePath = await open({
+            multiple: false,
+            filters: [{ name: 'All Files', extensions: ['*'] }],
+        });
+        if (filePath) {
+            await handleUpload(filePath);
+        }
+    } catch (error) {
+        uploadStatus.textContent = `❌ Error: ${getErrorMessage(error)}`;
+        uploadStatus.className = 'status error';
+    }
+}
+
+// ---------- Network / Link ----------
+async function loadNetworkInfo(): Promise<void> {
+    try {
+        const info = await invoke<NetworkInfo>('get_network_info');
+        currentNetworkInfo = info;
+        localIpEl.textContent = info.ip;
+    } catch (error) {
+        localIpEl.textContent = 'Error';
+        console.error('Network error:', error);
+    }
+}
+
+async function handleStartServer(): Promise<void> {
+    // Pulsante rimosso dalla UI: la funzione viene richiamata da ensureServerRunning()
+    if (!startServerBtn) {
+        try {
+            await invoke<string>('start_http_server');
+            updateServerLed(true);
+        } catch (error) {
+            console.error('Error starting server:', error);
+        }
+        return;
+    }
+    startServerBtn.disabled = true;
+    if (serverRunning) {
+        startServerBtn.textContent = '⏳ Stopping...';
+        try {
+            await invoke<string>('stop_http_server');
+            updateServerLed(false);
+            startServerBtn.textContent = '▶️ Start Server';
+        } catch (error) {
+            startServerBtn.textContent = '🛑 Stop Server';
+            console.error('Error stopping server:', error);
+        }
+    } else {
+        startServerBtn.textContent = '⏳ Starting...';
+        try {
+            await invoke<string>('start_http_server');
+            updateServerLed(true);
+            startServerBtn.textContent = '🛑 Stop Server';
+        } catch (error) {
+            startServerBtn.textContent = '▶️ Start Server';
+            console.error('Error starting server:', error);
+        }
+    }
+    startServerBtn.disabled = false;
+}
+
+// Avvia automaticamente il server HTTP locale se non è attivo.
+// Chiamato da Generate Link / Create Inbox: il link incorpora il fallback
+// LAN (lan=http://IP:3000) solo quando questo server è in esecuzione.
+async function ensureServerRunning(): Promise<void> {
+    if (serverRunning) return;
+    try {
+        await invoke<string>('start_http_server');
+        updateServerLed(true);
+        log('🟢 Local server auto-started (LAN fallback enabled)');
+    } catch (error) {
+        log('⚠️ Local server auto-start failed: ' + getErrorMessage(error));
+    }
+}
+
+// Generate local HTTP link for LAN network
+async function handleGenerateLocalLink(): Promise<void> {
+    const selectedHash = getSelectedHash();
+    if (!selectedHash) {
+        footerStatus.textContent = '❌ Select a file first';
+        footerStatus.className = 'status error';
+        return;
+    }
+    generateLocalLinkBtn.disabled = true;
+    generateLocalLinkBtn.textContent = '⏳ Generating...';
+    try {
+        const link = await invoke<string>('generate_local_link', { hash: selectedHash });
+        if (localLinkDisplay) localLinkDisplay.textContent = link;
+        if (localLinkContainer) localLinkContainer.classList.remove('hidden');
+        footerStatus.textContent = '✅ Local link generated!';
+        footerStatus.className = 'status success';
+        // Mark file as having its link generated (shows checkmark in file list)
+        copiedLinkFiles.set(selectedHash, Date.now());
+        renderFiles();
+        // Reset checkmark after 10 seconds
+        setTimeout(() => {
+            copiedLinkFiles.delete(selectedHash);
+            renderFiles();
+        }, 10000);
+    } catch (error) {
+        footerStatus.textContent = `❌ ${getErrorMessage(error)}`;
+        footerStatus.className = 'status error';
+    }
+    generateLocalLinkBtn.disabled = false;
+    generateLocalLinkBtn.textContent = '🔗 Generate Local Link';
+}
+
+async function handleOpenFolder(): Promise<void> {
+    try {
+        await invoke('open_shared_folder');
+        footerStatus.textContent = '✅ Shared folder opened';
+        footerStatus.className = 'status success';
+        setTimeout(() => { footerStatus.textContent = ''; footerStatus.className = 'status'; }, 2000);
+    } catch (error) {
+        footerStatus.textContent = `❌ ${getErrorMessage(error)}`;
+        footerStatus.className = 'status error';
+    }
+}
+
+// ---------- Drag & Drop ----------
+function handleDragEnter(e: DragEvent): void {
+    e.preventDefault(); e.stopPropagation();
+    dropZone.classList.add('drag-over');
+    dropOverlay.classList.remove('hidden');
+}
+function handleDragOver(e: DragEvent): void {
+    e.preventDefault(); e.stopPropagation();
+}
+function handleDragLeave(e: DragEvent): void {
+    e.preventDefault(); e.stopPropagation();
+    const rect = dropZone.getBoundingClientRect();
+    if (e.clientX <= rect.left || e.clientX >= rect.right || e.clientY <= rect.top || e.clientY >= rect.bottom) {
+        dropZone.classList.remove('drag-over');
+        dropOverlay.classList.add('hidden');
+    }
+}
+async function handleDrop(e: DragEvent): Promise<void> {
+    e.preventDefault(); e.stopPropagation();
+    dropZone.classList.remove('drag-over');
+    dropOverlay.classList.add('hidden');
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) {
+        uploadStatus.textContent = '❌ No file dropped';
+        uploadStatus.className = 'status error';
+        return;
+    }
+    for (let i = 0; i < files.length; i++) {
+        const path = (files[i] as any).path;
+        if (path) await handleUpload(path);
+    }
+}
+
+// ---------- Context (unificato) ----------
+// Con i link "smart" non esiste più la scelta locale/internet da parte
+// dell'utente: il percorso (LAN -> STUN -> TURN) viene deciso automaticamente.
+// La funzione resta per compatibilità ma si limita a garantire che tutte le
+// sezioni del pannello Sharing siano visibili e ad aggiornare lo stato relay.
+function updateContext(_context?: 'local' | 'internet'): void {
+    ['local-context', 'web-link-section', 'internet-inbox-section',
+     'row-peer-id', 'row-relay', 'connect-peer-container',
+     'connection-status', 'peers-container'].forEach(id => {
+        document.getElementById(id)?.classList.remove('hidden');
+    });
+
+    if (relayStatusEl) relayStatusEl.textContent = peer ? 'Active' : 'Waiting';
+}
+
+// ---------- P2P (Phase 4) ----------
+// TURN credentials loaded from environment variables (Vite: VITE_TURN_USERNAME /
+// VITE_TURN_PASSWORD) to avoid exposing secrets in source code.
+// If not configured, only STUN is used (no TURN relay).
+const TURN_USERNAME = import.meta.env.VITE_TURN_USERNAME || '';
+const TURN_PASSWORD = import.meta.env.VITE_TURN_PASSWORD || '';
+
+const iceServers: RTCIceServer[] = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+];
+
+// Add TURN server only if credentials are available.
+if (TURN_USERNAME && TURN_PASSWORD) {
+    iceServers.push({
+        urls: [
+            'stun:stun.relay.metered.ca:80',
+            'turn:global.relay.metered.ca:80',
+            'turn:global.relay.metered.ca:80?transport=tcp',
+            'turn:global.relay.metered.ca:443',
+            'turns:global.relay.metered.ca:443?transport=tcp',
+        ],
+        username: TURN_USERNAME,
+        credential: TURN_PASSWORD,
+    });
+}
+
+async function initPeer(forceRandom: boolean = false): Promise<void> {
+    try {
+        // Prevent leak: destroy any existing peer
+        if (peer) {
+            try { peer.destroy(); } catch (e) {}
+            peer = null;
+        }
+
+        const isSelfHosted = p2pConfig.signalingUrl !== undefined && !p2pConfig.signalingUrl.includes('peerjs.com');
+
+        // FIX: use a stable PeerID persisted on disk so generated links survive
+        // app restarts. Without this, PeerJS assigns a new random ID every
+        // launch, orphaning old links (receiver hangs on "Connecting to sender...").
+        let peerIdArg: string | undefined = undefined;
+        if (!forceRandom) {
+            try {
+                const persistentId = await invoke<string>('get_persistent_peer_id');
+                if (persistentId) peerIdArg = persistentId;
+            } catch (e) {
+                log('⚠️ Could not read persistent PeerID, using random: ' + getErrorMessage(e));
+            }
+        }
+
+        const peerOptions = {
+            host: p2pConfig.signalingUrl || '0.peerjs.com',
+            port: 443,
+            path: '/',
+            config: { iceServers },
+            secure: isSelfHosted,
+            debug: 2,
+        };
+        peer = peerIdArg ? new Peer(peerIdArg, peerOptions) : new Peer(peerOptions);
+
+        peer.on('open', (id) => {
+            currentPeerId = id;
+            reconnectAttempts = 0; // Reset reconnect counter
+            persistentIdRetryAttempts = 0; // Reset persistent ID retry counter
+            if (myPeerIdEl) myPeerIdEl.textContent = id;
+            if (relayStatusEl) relayStatusEl.textContent = 'Active';
+            // Update the PeerID in backend for web link generation
+            invoke('set_peer_id', { peerId: id }).catch(console.error);
+            log('✅ PeerJS connected with ID: ' + id + (isSelfHosted ? ' (self-hosted)' : ' (cloud)') + (peerIdArg ? ' (persistent)' : ' (random)'));
+        });
+        peer.on('connection', (conn: DataConnection) => {
+            log('📥 Connection from: ' + conn.peer);
+            handleIncomingConnection(conn);
+        });
+        peer.on('error', (err) => {
+            log('❌ PeerJS error: ' + err);
+            const msg = (err && typeof err.message === 'string') ? err.message : '';
+            if (msg.includes('Lost connection to server')) {
+                if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                    reconnectAttempts++;
+                    const delay = Math.min(2000 * Math.pow(1.5, reconnectAttempts - 1), 30000);
+                    log(`⏳ PeerJS reconnecting in ${delay}ms (attempt ${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+                    setTimeout(() => {
+                        if (peer) {
+                            try { peer.destroy(); } catch (e) {}
+                            peer = null;
+                        }
+                        initPeer();
+                    }, delay);
+                    updateConnectionStatus('pending', `Reconnecting... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`);
+                } else {
+                    log('❌ Could not reconnect to PeerJS.');
+                    updateConnectionStatus('error', 'Could not connect to signaling server.');
+                }
+            } else if ((msg.includes('taken') || msg.toLowerCase().includes('id is taken')) && !forceRandom) {
+                // Persistent PeerID is taken on the signaling server (old session not released yet).
+                // Instead of immediately falling back to random ID, retry with the persistent ID
+                // a few times so the server has time to release the old session.
+                if (persistentIdRetryAttempts < MAX_PERSISTENT_ID_RETRIES) {
+                    persistentIdRetryAttempts++;
+                    log(`⚠️ Persistent ID taken, retrying in ${PERSISTENT_ID_RETRY_DELAY}ms (attempt ${persistentIdRetryAttempts}/${MAX_PERSISTENT_ID_RETRIES})`);
+                    setTimeout(() => {
+                        if (peer) { try { peer.destroy(); } catch (e) {} peer = null; }
+                        initPeer();
+                    }, PERSISTENT_ID_RETRY_DELAY);
+                    updateConnectionStatus('pending', `Retrying ID... (${persistentIdRetryAttempts}/${MAX_PERSISTENT_ID_RETRIES})`);
+                } else {
+                    log('⚠️ Persistent ID still in use after retries, falling back to random ID for this session');
+                    if (peer) { try { peer.destroy(); } catch (e) {} peer = null; }
+                    initPeer(true);
+                }
+            } else {
+                updateConnectionStatus('error', 'P2P Error');
+            }
+        });
+    } catch (error) {
+        log('❌ Failed to initialize PeerJS: ' + getErrorMessage(error));
+    }
+}
+
+// Restore connections after hibernation/suspension (system-resumed event from backend)
+async function handleSystemResume(): Promise<void> {
+    // 1. Restart HTTP server (if it was running)
+    if (serverRunning) {
+        try {
+            await invoke('stop_http_server').catch(() => {});
+        } catch (e) {}
+        try {
+            await invoke('start_http_server');
+            console.log('✅ HTTP server restarted after hibernation');
+            updateServerLed(true); // existing UI function (also updates serverRunning)
+        } catch (e) {
+            console.error('❌ Error restarting server:', e);
+            serverRunning = false;
+            updateServerLed(false);
+        }
+    }
+
+    // 2. Reconnect PeerJS – destroy and reinitialize
+    if (peer) {
+        try { peer.destroy(); } catch (e) {}
+        peer = null;
+    }
+    initPeer(); // Reuse existing function (don't rewrite it)
+
+    // 3. Update UI
+    await loadFiles();
+    await loadNetworkInfo();
+    // Reset upload progress on system resume
+    activeUploads.clear();
+    renderUploadProgressList();
+    showNotification('🔄 System restored', 'Connections re-established.');
+}
+
+// Stream file to a specific connection (used for P2P-to-Web)
+// Protocol: sends 'file_meta' (JSON string) then raw binary chunks
+// Uses 256KB chunks and backpressure via bufferedAmount
+async function streamFileToConnection(conn: DataConnection, hash: string): Promise<void> {
+    // FIX #1: Validate against backend (get_file_info) instead of window.fileMap
+    // This ensures the file actually exists on disk, not just in the frontend index
+    let fileInfo: { filename: string; size: number; hash: string } | null = null;
+    try {
+        const info = await invoke<{ filename: string; size: number; hash: string } | null>('get_file_info', { hash });
+        if (info) {
+            fileInfo = info;
+        }
+    } catch (e) {
+        // get_file_info throws if file not found
+    }
+
+    if (!fileInfo) {
+        const errorMsg = `File not found for hash: ${hash}`;
+        log('❌ ' + errorMsg);
+        // FIX #2: Notify receiver of the error instead of silent return
+        try {
+            conn.send(JSON.stringify({ type: 'error', message: errorMsg }));
+        } catch (e) {
+            log('❌ Could not send error to receiver: ' + getErrorMessage(e));
+        }
+        return;
+    }
+
+    // Create unique key for this upload (peer + hash) to support multiple simultaneous uploads
+    const uploadKey = conn.peer + '-' + fileInfo.hash;
+
+    // TURN size limit (Fase 2): blocca file oltre TURN_MAX_FILE_SIZE su TURN.
+    // FIX CRITICO #1: il rilevamento del percorso ICE viene riprovato fino a
+    // 10 volte (1s di intervallo) invece di una singola chiamata. Una sola
+    // getStats() subito dopo l'apertura della connessione spesso ritorna
+    // null (candidate-pair non ancora selezionato), e in quel caso il limite
+    // non viene applicato, permettendo il trasferimento di file >100MB su TURN.
+    // FIX BASSO #11: usa la cache __turnMaxFileSize (già caricata all'avvio)
+    // invece di chiamare l'IPC get_turn_limits ogni volta. Evita 2 IPC ridondanti.
+    const turnMaxSize = (window as any).__turnMaxFileSize || 100 * 1024 * 1024;
+    // Fallback: se la cache non è ancora pronta, cerca di caricarla una volta
+    if (!(window as any).__turnMaxFileSize) {
+        try {
+            const limits = await invoke<{ max_file_size: number }>('get_turn_limits');
+            (window as any).__turnMaxFileSize = limits.max_file_size;
+        } catch { /* best-effort */ }
+    }
+
+    // Poll ICE stats with retries (up to 10 attempts, 1s apart).
+    // FIX: in caso di esaurimento del loop senza risultato, assumiamo 'turn'
+    // (massima prudenza) per non permettere il passaggio di file >100MB su TURN
+    // quando il rilevamento non riesce. Un path non rilevato è sospetto e può
+    // nascondere un relay.
+    let detectedPath: 'direct' | 'turn' | null = null;
+    for (let attempt = 0; attempt < 10; attempt++) {
+        if (attempt > 0) {
+            await new Promise<void>(r => setTimeout(r, 1000));
+        }
+        detectedPath = await detectConnectionPath(conn).catch(() => null);
+        if (detectedPath) break;
+    }
+    // Loop esaurito senza risultato: assumi 'turn' per sicurezza.
+    if (detectedPath === null) {
+        log('⚠️ detectConnectionPath: loop esaurito senza risultato. Assumo TURN per sicurezza.');
+        detectedPath = 'turn';
+    }
+
+    if (detectedPath === 'turn' && fileInfo.size > turnMaxSize) {
+        const errMsg = 'File too large for TURN connection (' + formatSize(fileInfo.size) + ' > ' + formatSize(turnMaxSize) + '). Switch to WiFi or reduce file size.';
+        log('TURN size limit exceeded: ' + errMsg);
+        // Telemetria: registra il rifiuto lato backend.
+        invoke('record_turn_rejection_cmd').catch(() => { /* best-effort */ });
+        // FIX: imposta il path su 'turn' anche per il badge LED
+        connectionPaths.set(uploadKey, 'turn');
+        activeUploads.set(uploadKey, {
+            hash: fileInfo.hash,
+            filename: fileInfo.filename,
+            bytes_processed: 0,
+            total_bytes: fileInfo.size,
+            progress: 0,
+            speed_mbps: 0,
+            peer_id: conn.peer,
+            cancelled: false
+        });
+        renderUploadProgressList();
+        // Aggiorna il badge a rosso (overlimit)
+        const badge = uploadProgressListRight?.querySelector<HTMLElement>('[data-upload-id="' + CSS.escape(uploadKey) + '"] .conn-badge');
+        if (badge) {
+            badge.className = 'conn-badge turn-overlimit';
+            badge.setAttribute('data-tooltip',
+                'This file exceeds the TURN size limit (' + formatSize(turnMaxSize) +
+                '). Connect to WiFi or reduce file size to transfer.');
+        }
+        try {
+            conn.send(JSON.stringify({
+                type: 'error',
+                reason: 'turn_size_limit',
+                message: errMsg,
+                max_size: turnMaxSize,
+                file_size: fileInfo.size,
+            }));
+        } catch (e) {
+            log('❌ Could not send turn_size_limit error: ' + getErrorMessage(e));
+        }
+        return;
+    }
+    // Path rilevato come 'direct': imposta il badge verde
+    if (detectedPath === 'direct') {
+        connectionPaths.set(uploadKey, 'direct');
+        renderUploadProgressList();
+    }
+    // detectedPath === 'turn' ma file <= limite: imposta badge giallo
+    if (detectedPath === 'turn' && fileInfo.size <= turnMaxSize) {
+        connectionPaths.set(uploadKey, 'turn');
+        renderUploadProgressList();
+    }
+
+    try {
+        // 1. Send file metadata as JSON string
+        const meta = {
+            type: 'file_meta',
+            filename: fileInfo.filename,
+            size: fileInfo.size,
+            hash: fileInfo.hash
+        };
+        conn.send(JSON.stringify(meta));
+        log(`📤 Metadata sent: ${fileInfo.filename} (${fileInfo.size} bytes) to ${conn.peer}`);
+
+        // 2. Stream file data in 256KB chunks (raw binary) with backpressure
+        let offset = 0;
+        const totalSize = fileInfo.size;
+        const startTime = Date.now();
+
+        // Track this as an active WebRTC upload (app is SENDING the file)
+        activeWebRtcDownloads.add(fileInfo.hash);
+
+        // Add to active uploads map for unified progress display
+        // FIX: this is an UPLOAD (app sends file), not a download
+        activeUploads.set(uploadKey, {
+            hash: fileInfo.hash,
+            filename: fileInfo.filename,
+            bytes_processed: 0,
+            total_bytes: totalSize,
+            progress: 0,
+            speed_mbps: 0,
+            peer_id: conn.peer,
+            cancelled: false
+        });
+        console.log('[DEBUG upload] P2P send started:', fileInfo.hash, 'totalSize =', totalSize, 'key =', uploadKey);
+        renderUploadProgressList();
+
+        // Rileva se questa connessione passa dal relay TURN (aggiorna il LED quando pronto).
+        // FIX: poll ICE stats with retries instead of a single call.
+        // A single getStats() right after the connection opens often
+        // returns no selected candidate pair yet, so the badge stays
+        // hidden for the whole transfer. Poll up to 10 times (1s apart).
+        let pollAttempts = 0;
+        const pollTurnPath = () => {
+            if (pollAttempts >= 10) return;
+            pollAttempts++;
+            detectConnectionPath(conn).then((path) => {
+                if (!path) {
+                    setTimeout(pollTurnPath, 1000);
+                    return;
+                }
+                connectionPaths.set(uploadKey, path);
+                renderUploadProgressList();
+            }).catch(() => {
+                if (pollAttempts < 10) setTimeout(pollTurnPath, 1000);
+            });
+        };
+        // Start polling after a short delay to let ICE settle
+        setTimeout(pollTurnPath, 500);
+        // renderUploadProgressList() is called on every chunk anyway, which
+        // re-applies the badge via applyConnBadge.
+
+        while (offset < totalSize) {
+            // Check if upload was cancelled
+            const uploadEntry = activeUploads.get(uploadKey);
+            if (uploadEntry && uploadEntry.cancelled) {
+                log(`❌ Upload annullato: ${fileInfo.filename}`);
+                activeUploads.delete(uploadKey);
+                renderUploadProgressList();
+                activeWebRtcDownloads.delete(fileInfo.hash);
+                return;
+            }
+
+            const chunk = await invoke<string | null>('read_file_chunk', {
+                hash: hash,
+                offset: offset
+            });
+
+            if (!chunk) break; // EOF
+
+            // Decode base64 to binary and send raw bytes
+            const binaryChunk = atob(chunk);
+            const bytes = new Uint8Array(binaryChunk.length);
+            for (let i = 0; i < binaryChunk.length; i++) {
+                bytes[i] = binaryChunk.charCodeAt(i);
+            }
+
+            // Backpressure: wait if buffer is too full
+            if (conn.dataChannel && conn.dataChannel.bufferedAmount > 1024 * 1024) { // 1MB threshold
+                await new Promise<void>((resolve) => {
+                    const onLow = () => {
+                        conn.dataChannel.removeEventListener('bufferedamountlow', onLow);
+                        resolve();
+                    };
+                    conn.dataChannel.addEventListener('bufferedamountlow', onLow);
+                });
+            }
+
+            conn.send(bytes);
+
+            // Increment by actual bytes read (not chunkSize)
+            offset += bytes.length;
+
+            // Update upload progress bar in real-time
+            const elapsedMs = Date.now() - startTime;
+            const speedMbps = elapsedMs > 0 ? (offset / (1024 * 1024)) / (elapsedMs / 1000) : 0;
+            const progress = Math.min(100, (offset / totalSize) * 100);
+            // Update the active uploads map (this is an upload operation)
+            // Use the same unique key for this upload
+            // FIX: preserve the existing `cancelled` flag instead of hardcoding
+            // `false`. Without this, every loop iteration overwrites the flag
+            // set by the user's cancel click, so the upload never stops.
+            const existingEntry = activeUploads.get(uploadKey);
+            activeUploads.set(uploadKey, {
+                hash: fileInfo.hash,
+                filename: fileInfo.filename,
+                bytes_processed: offset,
+                total_bytes: totalSize,
+                progress: progress,
+                speed_mbps: speedMbps,
+                peer_id: conn.peer,
+                cancelled: existingEntry ? existingEntry.cancelled : false
+            });
+            renderUploadProgressList();
+        }
+
+        // Mark upload as complete - remove from active uploads
+        activeUploads.delete(uploadKey);
+        renderUploadProgressList();
+        
+        // Remove from active WebRTC uploads
+        activeWebRtcDownloads.delete(fileInfo.hash);
+        
+        log(`✅ File sent to ${conn.peer}`);
+        
+        // Record as upload (file leaving this computer)
+        addRecentTransfer('upload', fileInfo.filename, fileInfo.size);
+        
+        // Clear the pending file hash
+        invoke('clear_pending_file_hash').catch(console.error);
+    } catch (error) {
+        const errorMsg = getErrorMessage(error);
+        log('❌ Error streaming file: ' + errorMsg);
+        // Remove from active uploads on error
+        activeUploads.delete(uploadKey);
+        renderUploadProgressList();
+        // Remove from active WebRTC uploads on error
+        activeWebRtcDownloads.delete(fileInfo.hash);
+        // FIX #2: Notify receiver of the error
+        try {
+            conn.send(JSON.stringify({ type: 'error', message: errorMsg }));
+        } catch (e) {
+            log('❌ Could not send error to receiver: ' + getErrorMessage(e));
+        }
+    }
+}
+
+function handleIncomingConnection(conn: DataConnection): void {
+    connections.set(conn.peer, conn);
+    updateConnectionStatus('connected', 'Connected to ' + conn.peer);
+    
+    // Initialize message queue for this peer (serialization)
+    let messageQueue = Promise.resolve();
+    uploadMessageQueues.set(conn.peer, messageQueue);
+    
+    // Register data listener FIRST to avoid race condition
+        conn.on('data', (data: any) => {
+            log('📨 Received data from ' + conn.peer + ': ' + (typeof data === 'string' ? data : '[binary]'));
+            
+            // Serialize all messages for this peer to avoid race condition
+            // Update the queue after each message to ensure proper ordering
+            const currentQueue = uploadMessageQueues.get(conn.peer) || Promise.resolve();
+            const newQueue = currentQueue.then(() => processIncomingMessage(conn, data))
+                .catch(console.error);
+            uploadMessageQueues.set(conn.peer, newQueue);
+        });
+    
+    // When a connection is established, notify ready but DON'T send file yet
+    conn.on('open', () => {
+        log('🔗 Connection open with: ' + conn.peer);
+        
+        // Check for pending file hash (P2P-to-Web flow)
+        // Send a 'ready' signal to let receiver know we're listening
+        invoke<string | null>('get_pending_file_hash')
+            .then((hash) => {
+                if (hash) {
+                    log('📤 Pending file available, waiting for request from ' + conn.peer);
+                    // Send ready signal - receiver will request the file
+                    conn.send(JSON.stringify({ type: 'ready', hash: hash }));
+                }
+            })
+            .catch(console.error);
+    });
+    
+    conn.on('close', () => {
+            connections.delete(conn.peer);
+            incomingUploads.delete(conn.peer);
+            uploadMessageQueues.delete(conn.peer);
+            // Remove all uploads from this peer from the map
+            for (const key of activeUploads.keys()) {
+                if (key.startsWith(conn.peer + '-')) {
+                    activeUploads.delete(key);
+                }
+            }
+            // Rimuovi le informazioni di percorso connessione di questo peer
+            for (const key of connectionPaths.keys()) {
+                if (key.startsWith(conn.peer + '-')) {
+                    connectionPaths.delete(key);
+                }
+            }
+            renderUploadProgressList();
+            updateConnectionStatus('disconnected', 'Disconnected');
+        });
+}
+
+// Auto-finalize: called when receivedBytes >= size (all bytes written to disk).
+// This is the ULTRA-ROBUST path — it does NOT depend on the out-of-order
+// `upload_end` text message from PeerJS, which can arrive before the last
+// binary chunks are processed. Prevents hash mismatch from premature finalize.
+async function finalizeIncomingUpload(conn: DataConnection, upload: IncomingUpload): Promise<void> {
+    // Remove from active downloads
+    // FIX P0: usare la STESSA logica di riga 1376 (msg.hash ha priorità
+    // su peer-filename) per garantire che set/delete operino sulla stessa
+    // entry. Senza questo, la entry creata a riga 1376 con chiave msg.hash
+    // resta orfana e appare come barra download ferma a 0%.
+    const downloadId = upload.expectedHash || `${conn.peer}-${upload.filename}`;
+    activeDownloads.delete(downloadId);
+    updateDownloadProgress(Array.from(activeDownloads.values()));
+
+    // Call finalize_incoming_file with try/catch
+    try {
+        log('📌 finalize_incoming_file with peerId: ' + conn.peer);
+        const result = await invoke<string>('finalize_incoming_file', {
+            peerId: conn.peer
+        });
+        log('✅ File saved: ' + upload.filename + ' (hash: ' + result + ')');
+        sendUploadComplete(conn, upload);
+        // Refresh file list
+        loadFiles();
+        // Record as a download (app received the file via inbox)
+        addRecentTransfer('download', upload.filename, upload.size);
+    } catch (err) {
+        // FIX P0: distingue hash mismatch da errori generici.
+        // Se il backend rifiuta l'upload per integrità, il
+        // file NON è stato salvato in shared-folder/. L'utente
+        // deve sapere esattamente cosa è successo.
+        const errMsg = getErrorMessage(err);
+        const isHashMismatch = errMsg.toLowerCase().includes('hash mismatch');
+        if (isHashMismatch) {
+            log('❌❌ HASH MISMATCH: file rifiutato dal backend per integrità: ' + errMsg);
+            // Notifica di sistema con titolo esplicito
+            showNotification(
+                '❌ Upload RIFIUTATO: hash mismatch',
+                `${upload.filename}: il file ricevuto non corrisponde all'hash dichiarato. NON è stato salvato per garantire integrità.`
+            );
+            // Messaggio al browser (se P2P-to-Web)
+            try {
+                conn.send(JSON.stringify({
+                    type: 'upload_error',
+                    reason: 'hash_mismatch',
+                    message: errMsg
+                }));
+            } catch (e) { /* best-effort */ }
+        } else {
+            log('❌ Error finalizing file: ' + errMsg);
+            try {
+                conn.send(JSON.stringify({
+                    type: 'upload_error',
+                    reason: 'finalize_failed',
+                    message: errMsg
+                }));
+            } catch (e) { /* best-effort */ }
+        }
+    }
+}
+
+// Process incoming message (serialized per-peer)
+async function processIncomingMessage(conn: DataConnection, data: any): Promise<void> {
+    // Handle P2P-to-Web file request (reverse handshake)
+    if (typeof data === 'string') {
+        try {
+            const msg = JSON.parse(data);
+            if (msg.type === 'request_file') {
+                // Receiver is requesting the file - start streaming
+                log('📤 Receiver requested file: ' + msg.hash);
+                await streamFileToConnection(conn, msg.hash);
+                return;
+            }
+            // The receiver cancelled a download in progress. We mark the
+            // matching upload as cancelled so the sender loop (which polls
+            // uploadEntry.cancelled) stops sending more chunks.
+            if (msg.type === 'cancel_upload') {
+                log('⛔ Receiver cancelled upload: ' + msg.hash);
+                for (const [key, value] of activeUploads.entries()) {
+                    if (value.hash === msg.hash) {
+                        value.cancelled = true;
+                        activeUploads.set(key, value);
+                        break;
+                    }
+                }
+                return;
+            }
+            if (msg.type === 'upload_file') {
+                // Browser is sending a file (Reverse Inbox)
+                log('📥 Upload request from browser: ' + msg.filename + ' (peerId: ' + conn.peer + ')');
+
+                // TURN size limit (Fase 2): blocca upload browser>app oltre TURN_MAX_FILE_SIZE.
+                // FIX: show the download bar IMMEDIATELY (before detectConnectionPath)
+                // so the user gets instant feedback instead of waiting 1-2s for ICE stats.
+                // The badge is updated asynchronously when the path is detected.
+                // FIX BASSO #11: usa la cache __turnMaxFileSize invece di chiamare l'IPC.
+                const turnMaxSize2 = (window as any).__turnMaxFileSize || 100 * 1024 * 1024;
+                // Fallback: se la cache non è ancora pronta, caricala una volta
+                if (!(window as any).__turnMaxFileSize) {
+                    try {
+                        const limits = await invoke<{ max_file_size: number }>('get_turn_limits');
+                        (window as any).__turnMaxFileSize = limits.max_file_size;
+                    } catch { /* best-effort */ }
+                }
+                // FIX: declare downloadId BEFORE the TURN limit check so the
+                // red badge + download bar also appear on the RECEIVER's side
+                // when the file exceeds the TURN size limit (same fix as the
+                // upload path in streamFileToConnection).
+                const downloadId = msg.hash || `${conn.peer}-${msg.filename}`;
+
+                // Show the download bar IMMEDIATELY so the user sees feedback
+                // while ICE stats are being fetched (1-2s).
+                activeDownloads.set(downloadId, {
+                    hash: downloadId,
+                    filename: msg.filename,
+                    total_bytes: msg.size,
+                    downloaded_bytes: 0,
+                    progress: 0,
+                    speed_mbps: 0,
+                    peer_ip: conn.peer,
+                    cancelled: false
+                });
+                updateDownloadProgress(Array.from(activeDownloads.values()));
+
+                // FIX ALTO: unificare i due polling in un unico meccanismo che
+                // sia aggiorni il badge sia determini il percorso per il check
+                // limite. Due polling paralleli sulla stessa connessione potevano
+                // generare race condition su `connectionPaths`.
+                // Poll ICE stats with retries — a single getStats() right after
+                // the connection opens often returns no selected candidate pair.
+                const downloadKey2 = downloadId;
+                let detectedPath2: 'direct' | 'turn' | null = null;
+                let pollAttempts2 = 0;
+                const pollTurnPath = () => {
+                    if (pollAttempts2 >= 10) return;
+                    pollAttempts2++;
+                    detectConnectionPath(conn).then((path) => {
+                        if (!path) {
+                            setTimeout(pollTurnPath, 1000);
+                            return;
+                        }
+                        detectedPath2 = path;
+                        connectionPaths.set(downloadKey2, path);
+                        updateDownloadProgress(Array.from(activeDownloads.values()));
+                    }).catch(() => {
+                        if (pollAttempts2 < 10) setTimeout(pollTurnPath, 1000);
+                    });
+                };
+                setTimeout(pollTurnPath, 500);
+
+                // Wait for the first path detection result before deciding
+                // whether to reject (TURN + >100MB) or accept.
+                // Use the same polling logic (no duplicate).
+                for (let attempt = 0; attempt < 10 && !detectedPath2; attempt++) {
+                    if (attempt > 0) {
+                        await new Promise<void>(r => setTimeout(r, 1000));
+                    }
+                    detectedPath2 = await detectConnectionPath(conn).catch(() => null);
+                }
+                if (detectedPath2 === 'turn' && msg.size > turnMaxSize2) {
+                    const errMsg = 'File too large for TURN connection (' + formatSize(msg.size) + ' > ' + formatSize(turnMaxSize2) + '). Switch to WiFi or reduce file size.';
+                    log('TURN size limit exceeded (inbox): ' + errMsg);
+                    invoke('record_turn_rejection_cmd').catch(() => { /* best-effort */ });
+
+                    // The download bar is already shown above; just set the red badge.
+                    connectionPaths.set(downloadId, 'turn');
+                    updateDownloadProgress(Array.from(activeDownloads.values()));
+
+                    try {
+                        conn.send(JSON.stringify({
+                            type: 'upload_error',
+                            reason: 'turn_size_limit',
+                            message: errMsg,
+                            max_size: turnMaxSize2,
+                            file_size: msg.size,
+                        }));
+                    } catch (e) {
+                        log('Could not send turn_size_limit error: ' + getErrorMessage(e));
+                    }
+                    return;
+                }
+
+                // Initialize incoming upload state (incremental write to disk)
+                const upload: IncomingUpload = {
+                    filename: msg.filename,
+                    size: msg.size,
+                    expectedHash: msg.hash || '',
+                    receivedBytes: 0,
+                    startTime: Date.now(),
+                    finalized: false,
+                    uploadCompleteSent: false
+                };
+                incomingUploads.set(conn.peer, upload);
+
+                // Call init_incoming_upload to create temp file.
+                // FIX CRITICO #3: passare il percorso ICE rilevato (detectedPath2)
+                // al backend, che lo usa per applicare il limite TURN lato server
+                // (difesa in profondità). Senza questo, il path è sempre None e il
+                // controllo in init_incoming_upload.rs:29 non si attiva mai.
+                try {
+                    log('📌 init_incoming_upload with peerId: ' + conn.peer);
+                    await invoke('init_incoming_upload', {
+                        peerId: conn.peer,
+                        filename: msg.filename,
+                        size: msg.size,
+                        expectedHash: msg.hash || '',
+                        path: detectedPath2 === 'turn' ? 'turn' : 'direct'
+                    });
+                    // Acknowledge and start receiving
+                    conn.send(JSON.stringify({ type: 'upload_accepted' }));
+                } catch (err) {
+                    log('❌ Error initializing upload: ' + getErrorMessage(err));
+                    conn.send(JSON.stringify({ type: 'upload_error', message: getErrorMessage(err) }));
+                    // Remove from active downloads on error
+                    activeDownloads.delete(downloadId);
+                    updateDownloadProgress(Array.from(activeDownloads.values()));
+                }
+                return;
+            }
+            if (msg.type === 'upload_end') {
+                            // Browser finished sending file.
+                            // NOTE: This message can arrive OUT OF ORDER (before the last
+                            // binary chunks are processed) due to how PeerJS delivers
+                            // text vs binary data. We do NOT finalize here — the file is
+                            // auto-finalized in the binary chunk handler when
+                            // receivedBytes >= size (see finalizeIncomingUpload).
+                            // This prevents the classic "hash mismatch" caused by
+                            // finalizing an incomplete file.
+                            // FIX ALTO: semplificiamo la logica. L'auto-finalizzazione
+                            // (riga 1653) è il percorso principale e invia già
+                            // `upload_complete`. Questo gestore è un fallback: se
+                            // l'upload è già stato finalizzato, conferma; altrimenti
+                            // non fa nulla (non invia `upload_complete`) per evitare
+                            // race condition con l'arrivo degli ultimi chunk.
+                            log('📥 upload_end received (auto-finalize handles completion)');
+                            const upload = incomingUploads.get(conn.peer);
+                            if (upload && upload.finalized) {
+                                log('✅ File already finalized by auto-finalize, confirming to browser');
+                                sendUploadComplete(conn, upload);
+                            } else {
+                                log('⏳ upload_end received but auto-finalize not yet done; waiting for last chunk');
+                            }
+                            return;
+                        }
+        } catch (e) {
+            // Not JSON, ignore
+        }
+        return;
+    }
+    
+    // Handle binary data (file chunks)
+    if (data instanceof ArrayBuffer || data instanceof Uint8Array || ArrayBuffer.isView(data)) {
+        let chunk: Uint8Array;
+        if (data instanceof ArrayBuffer) {
+            chunk = new Uint8Array(data);
+        } else if (data instanceof Uint8Array) {
+            chunk = data;
+        } else {
+            chunk = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+        }
+        
+                const upload = incomingUploads.get(conn.peer);
+                if (upload) {
+                    // Call append_incoming_chunk to write incrementally to disk
+                    try {
+                        log('📌 append_incoming_chunk with peerId: ' + conn.peer + ', chunk size: ' + chunk.length);
+                        await invoke('append_incoming_chunk', {
+                            peerId: conn.peer,
+                            chunk: chunk
+                        });
+                        upload.receivedBytes += chunk.length;
+                        const progress = Math.round((upload.receivedBytes / upload.size) * 100);
+                        log(`📥 Received upload chunk: ${progress}%`);
+
+                        // ULTRA-ROBUST auto-finalize: when ALL bytes declared in
+                        // upload_file have been received and written to disk, finalize
+                        // IMMEDIATELY. This does NOT depend on the out-of-order
+                        // `upload_end` text message from PeerJS, which can arrive
+                        // before the last binary chunks are processed.
+                        // This eliminates the root cause of hash mismatch.
+                        if (!upload.finalized && upload.receivedBytes >= upload.size) {
+                            upload.finalized = true;
+                            log('✅ All bytes received (' + upload.receivedBytes + '/' + upload.size + '), auto-finalizing...');
+                            // FIX ALTO: non cancellare incomingUploads PRIMA di finalizeIncomingUpload.
+                            // Se finalize fallisce (es. hash mismatch), l'entry deve rimanere
+                            // per permettere un retry dal browser. finalizeIncomingUpload
+                            // invia già `upload_complete` al browser in caso di successo.
+                            await finalizeIncomingUpload(conn, upload);
+                            incomingUploads.delete(conn.peer);
+                            return;
+                        }
+
+                        // Real transfer speed: bytes received / elapsed time since start
+                        const elapsedMs = Date.now() - upload.startTime;
+                        const speedMbps = elapsedMs > 0 ? (upload.receivedBytes / (1024 * 1024)) / (elapsedMs / 1000) : 0;
+                        // Update download progress bar (Reverse Inbox: app is receiving from browser)
+                        // FIX P0: coerenza con riga 1376 (msg.hash prioritario) per evitare entry orfane.
+                        const downloadId = upload.expectedHash || `${conn.peer}-${upload.filename}`;
+                        activeDownloads.set(downloadId, {
+                            hash: upload.expectedHash || downloadId,
+                            filename: upload.filename,
+                            total_bytes: upload.size,
+                            downloaded_bytes: upload.receivedBytes,
+                            progress: progress,
+                            speed_mbps: speedMbps,
+                            peer_ip: conn.peer,
+                                                        cancelled: false
+                                                    });
+                                                    updateDownloadProgress(Array.from(activeDownloads.values()));
+                                                } catch (err) {
+                                                    const errorMsg = getErrorMessage(err);
+                                                    log('❌ Error appending chunk: ' + errorMsg);
+                                                    // Notify browser so it doesn't hang sending chunks forever
+                                                    try {
+                                                        conn.send(JSON.stringify({ type: 'upload_error', message: errorMsg }));
+                                                    } catch (e) {
+                                                        log('❌ Could not send upload_error to browser: ' + getErrorMessage(e));
+                                                    }
+                                                    // Remove from active downloads on error
+                                                    // FIX P0: coerenza con riga 1376 (msg.hash prioritario) per evitare entry orfane.
+                                                    const downloadId = upload.expectedHash || `${conn.peer}-${upload.filename}`;
+                                                    activeDownloads.delete(downloadId);
+                                                    updateDownloadProgress(Array.from(activeDownloads.values()));
+                                                }
+                                            }
+                                        }
+                                        
+                                        // Handle incoming file offers (P2P-to-P2P)
+                                        if (data?.type === 'file-offer') {
+                                            // Initialize incoming file state
+                                            incomingFiles.set(data.hash, {
+                                                filename: data.filename,
+                                                size: data.size,
+                                                hash: data.hash,
+                                                chunks: new Map(),
+                                                receivedBytes: 0,
+                                                startTime: Date.now()
+                                            });
+                                            // Add to active downloads for progress display
+                                            // FIX #1: usare sempre data.hash come chiave (è il msg.expectedHash
+                                            // del mittente, corrisponde alla chiave di cancellazione backend)
+                                            activeDownloads.set(data.hash, {
+                                                hash: data.hash,
+                                                filename: data.filename,
+                                                total_bytes: data.size,
+                                                downloaded_bytes: 0,
+                                                progress: 0,
+                                                speed_mbps: 0,
+                                                peer_ip: conn.peer,
+                                                cancelled: false
+                                            });
+                                            updateDownloadProgress(Array.from(activeDownloads.values()));
+                                            // Rileva se questa connessione passa dal relay TURN (LED badge).
+                                            // FIX: poll ICE stats with retries instead of a single call.
+                                            // A single getStats() right after the connection opens often
+                                            // returns no selected candidate pair yet, so the badge stays
+                                            // hidden for the whole transfer. Poll up to 10 times (1s apart).
+                                            let p2pPollAttempts = 0;
+                                            const p2pPollTurnPath = () => {
+                                                if (p2pPollAttempts >= 10) return;
+                                                p2pPollAttempts++;
+                                                detectConnectionPath(conn).then((path) => {
+                                                    if (!path) {
+                                                        setTimeout(p2pPollTurnPath, 1000);
+                                                        return;
+                                                    }
+                                                    connectionPaths.set(data.hash, path);
+                                                    updateDownloadProgress(Array.from(activeDownloads.values()));
+                                                }).catch(() => {
+                                                    if (p2pPollAttempts < 10) setTimeout(p2pPollTurnPath, 1000);
+                                                });
+                                            };
+                                            setTimeout(p2pPollTurnPath, 500);
+                                            log(`📥 File offer received: ${data.filename} (${data.size} bytes)`);
+                                            return;
+                                        }
+                                        if (data?.type === 'file-chunk') {
+                                            const incoming = incomingFiles.get(data.hash);
+                                            if (incoming) {
+                                                incoming.chunks.set(data.offset, data.chunk);
+                                                incoming.receivedBytes += data.chunk.length;
+                                                const progress = Math.round((incoming.receivedBytes / incoming.size) * 100);
+                                                log(`📥 Received chunk: ${progress}%`);
+
+                                                // Update download progress bar
+                                                const elapsedMs = Date.now() - incoming.startTime;
+                                                const speedMbps = elapsedMs > 0 ? (incoming.receivedBytes / (1024 * 1024)) / (elapsedMs / 1000) : 0;
+                                                activeDownloads.set(data.hash, {
+                                                    hash: data.hash,
+                                                    filename: incoming.filename,
+                                                    total_bytes: incoming.size,
+                                                    downloaded_bytes: incoming.receivedBytes,
+                                                    progress: progress,
+                                                    speed_mbps: speedMbps,
+                                                    peer_ip: conn.peer,
+                                                    cancelled: false
+                                                });
+                                                updateDownloadProgress(Array.from(activeDownloads.values()));
+
+                                                // Check if all chunks received
+                                                if (incoming.chunks.size > 0 && incoming.receivedBytes >= incoming.size) {
+                                                    log('✅ All chunks received, assembling file...');
+                                                    // Assemble file from chunks
+                                                    const assembled = new Uint8Array(incoming.size);
+                                                    let pos = 0;
+                                                    for (const [offset, chunk] of incoming.chunks) {
+                                                        assembled.set(chunk, offset);
+                                                        pos += chunk.length;
+                                                    }
+                                                    // Create blob and download
+                                                    const blob = new Blob([assembled]);
+                                                    const url = URL.createObjectURL(blob);
+                                                    const a = document.createElement('a');
+                                                    a.href = url;
+                                                    a.download = incoming.filename;
+                                                    document.body.appendChild(a);
+                                                    a.click();
+                                                    document.body.removeChild(a);
+                                                    setTimeout(() => URL.revokeObjectURL(url), 5000);
+                                                    log('✅ File downloaded via P2P');
+                                                    incomingFiles.delete(data.hash);
+                                                    activeDownloads.delete(data.hash);
+                                                    updateDownloadProgress(Array.from(activeDownloads.values()));
+                                                }
+                                            }
+                                            return;
+                                        }
+                                    }
+function downloadReceivedFile(filename: string, data: Uint8Array): void {
+    const blob = new Blob([data.buffer as ArrayBuffer]);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+    showNotification('File received', `${filename} has been received successfully`);
+    addRecentTransfer('download', filename, data.byteLength);
+}
+
+async function connectToPeer(): Promise<void> {
+    // UI di connessione manuale rimossa: la funzione resta solo per compatibilità
+    if (!remotePeerIdInput || !connectPeerBtn) return;
+    const remotePeerId = remotePeerIdInput.value.trim();
+    if (!remotePeerId || !peer) return;
+    connectPeerBtn.disabled = true;
+    connectPeerBtn.textContent = '⏳ Connecting...';
+    updateConnectionStatus('pending', 'Waiting...');
+    try {
+        const conn = peer.connect(remotePeerId);
+        conn.on('open', () => {
+            connections.set(remotePeerId, conn);
+            updateConnectionStatus('connected', 'Connected to ' + remotePeerId);
+            connectPeerBtn.textContent = '✅ Connected';
+        });
+        conn.on('error', (err) => {
+            log('❌ Connection error: ' + err);
+            updateConnectionStatus('error', 'Connection error');
+            connectPeerBtn.textContent = 'Connect';
+        });
+        conn.on('close', () => {
+            connections.delete(remotePeerId);
+            updateConnectionStatus('disconnected', 'Disconnected');
+            connectPeerBtn.textContent = 'Connect';
+        });
+    } catch (error) {
+        log('❌ Failed to connect: ' + getErrorMessage(error));
+        updateConnectionStatus('error', 'Error');
+        connectPeerBtn.textContent = 'Connect';
+    }
+    connectPeerBtn.disabled = false;
+}
+
+async function disconnectFromPeer(): Promise<void> {
+    // UI di connessione manuale rimossa: la funzione resta solo per compatibilità
+    if (!remotePeerIdInput || !connectPeerBtn) return;
+    // The Rust command requires a peer_id; we use the remote ID entered
+    // or the first connected peer on the frontend side (PeerJS).
+    const targetPeerId = remotePeerIdInput.value.trim() ||
+        (connections.size > 0 ? Array.from(connections.keys())[0] : '');
+    try {
+        await invoke('disconnect_from_peer', { peerId: targetPeerId });
+    } catch (error) {
+        log('Disconnect error: ' + getErrorMessage(error));
+    }
+    connections.forEach(conn => conn.close());
+    connections.clear();
+    updateConnectionStatus('disconnected', 'Disconnected');
+    connectPeerBtn.textContent = 'Connect';
+}
+
+function updateConnectionStatus(status: 'connected' | 'disconnected' | 'error' | 'pending', text: string): void {
+    if (connectionStatusEl && connectionStatusText) {
+        connectionStatusEl.className = `connection-status status-${status}`;
+        connectionStatusText.textContent = text;
+    }
+}
+
+async function loadPeers(): Promise<void> {
+    // UI Active Peers rimossa: la funzione resta per compatibilità ma esce subito
+    if (!peersListEl) return;
+    try {
+        const peers = await invoke<PeerInfo[]>('list_peers');
+        if (!peers || peers.length === 0) {
+            peersListEl.innerHTML = '<li class="loading">No peers</li>';
+            return;
+        }
+        peersListEl.innerHTML = peers.map(p => `<li>${escapeHtml(p.peer_id)}</li>`).join('');
+    } catch {
+        peersListEl.innerHTML = '<li class="loading">No peers</li>';
+    }
+}
+
+// Generate a P2P-to-Web link that includes the sender's PeerID
+async function generateWebLink(): Promise<void> {
+    const selectedHash = getSelectedHash();
+    if (!selectedHash) {
+        footerStatus.textContent = '❌ Select a file before generating web link';
+        footerStatus.className = 'status error';
+        return;
+    }
+    generateWebLinkBtn.disabled = true;
+    generateWebLinkBtn.textContent = '⏳ Generating...';
+    try {
+        // Server locale attivo => il link include il fallback LAN (lan=...)
+        await ensureServerRunning();
+        // Configurazione ICE/signaling interamente env-driven nel backend:
+        // niente credenziali statiche passate dall'frontend.
+        const link = await invoke<string>('generate_web_link', {
+            hash: selectedHash,
+        });
+        if (webLinkDisplay) webLinkDisplay.textContent = link;
+        if (webLinkContainer) webLinkContainer.classList.remove('hidden');
+        footerStatus.textContent = '✅ Web link generated!';
+        footerStatus.className = 'status success';
+        // Mark file as having its link generated (shows checkmark in file list)
+        copiedLinkFiles.set(selectedHash, Date.now());
+        renderFiles();
+        // Reset checkmark after 10 seconds
+        setTimeout(() => {
+            copiedLinkFiles.delete(selectedHash);
+            renderFiles();
+        }, 10000);
+    } catch (error) {
+        footerStatus.textContent = `❌ ${getErrorMessage(error)}`;
+        footerStatus.className = 'status error';
+    }
+    generateWebLinkBtn.disabled = false;
+    generateWebLinkBtn.textContent = '🔗 Generate Link';
+}
+
+function getSelectedHash(): string | null {
+    const selected = document.querySelector('.file-item.selected');
+    if (selected) return (selected as HTMLElement).dataset.hash || null;
+    return null;
+}
+
+function showFileReceiveNotification(filename: string, peerId: string): void {
+    if (confirm(`📥 Receive file from ${peerId}: ${filename}?`)) {
+        log('✅ File accepted: ' + filename);
+    } else {
+        log('❌ File rejected: ' + filename);
+    }
+}
+
+function log(message: string): void {
+    console.log('[P2P] ' + message);
+}
+
+async function copyToClipboard(text: string, successMsg: string): Promise<void> {
+    try {
+        await writeText(text);
+        footerStatus.textContent = `✅ ${successMsg}`;
+        footerStatus.className = 'status success';
+        setTimeout(() => { footerStatus.textContent = ''; footerStatus.className = 'status'; }, 2000);
+    } catch (error) {
+        footerStatus.textContent = `❌ ${getErrorMessage(error)}`;
+        footerStatus.className = 'status error';
+    }
+}
+
+export function configureP2p(config: P2pConfig): void {
+    p2pConfig = { ...p2pConfig, ...config };
+    if (peer) peer.destroy();
+    initPeer();
+}
+
+// ---------- Reverse Inbox ----------
+async function handleCreateInboxLocal(): Promise<void> {
+    createInboxLocalBtn.disabled = true;
+    createInboxLocalBtn.textContent = '⏳ Generating...';
+    try {
+        // Inbox locale = HTTP puro (/inbox/{id}): nessun signaling/TURN coinvolto
+        const link = await invoke<string>('create_inbox_local');
+        if (inboxLocalLinkEl) inboxLocalLinkEl.textContent = link;
+        if (inboxLocalLinkContainer) inboxLocalLinkContainer.classList.remove('hidden');
+        footerStatus.textContent = '✅ Local inbox link generated!';
+        footerStatus.className = 'status success';
+    } catch (error) {
+        footerStatus.textContent = `❌ ${getErrorMessage(error)}`;
+        footerStatus.className = 'status error';
+    }
+    createInboxLocalBtn.disabled = false;
+    createInboxLocalBtn.textContent = '📥 Create Local Inbox';
+}
+
+async function handleCreateInboxInternet(): Promise<void> {
+    createInboxInternetBtn.disabled = true;
+    createInboxInternetBtn.textContent = '⏳ Generating...';
+    try {
+        // Server locale attivo => il link include il fallback LAN (lan=...)
+        await ensureServerRunning();
+        const link = await invoke<string>('create_inbox');
+        if (inboxInternetLinkEl) inboxInternetLinkEl.textContent = link;
+        if (inboxInternetLinkContainer) inboxInternetLinkContainer.classList.remove('hidden');
+        footerStatus.textContent = '✅ Internet inbox link generated!';
+        footerStatus.className = 'status success';
+    } catch (error) {
+        footerStatus.textContent = `❌ ${getErrorMessage(error)}`;
+        footerStatus.className = 'status error';
+    }
+    createInboxInternetBtn.disabled = false;
+    createInboxInternetBtn.textContent = '📥 Create Inbox';
+}
+
+// ---------- Event listeners ----------
+uploadBtn.addEventListener('click', handleSelectFile);
+refreshBtn.addEventListener('click', handleRefresh);
+// Pulsante Start Server rimosso dalla UI: avvio automatico via ensureServerRunning()
+startServerBtn?.addEventListener('click', handleStartServer);
+openFolderBtn.addEventListener('click', handleOpenFolder);
+
+dropZone.addEventListener('dragenter', handleDragEnter);
+dropZone.addEventListener('dragover', handleDragOver);
+dropZone.addEventListener('dragleave', handleDragLeave);
+dropZone.addEventListener('drop', handleDrop);
+
+// Toggle Local / Internet
+document.querySelectorAll('.toggle-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const ctx = (btn as HTMLElement).dataset.context as 'local' | 'internet';
+        updateContext(ctx);
+    });
+});
+
+// Columns / Sorting
+columnSelect.addEventListener('change', renderFiles);
+sortSelect.addEventListener('change', renderFiles);
+
+// Generate Local Link
+generateLocalLinkBtn?.addEventListener('click', handleGenerateLocalLink);
+copyLocalLinkBtn?.addEventListener('click', () => {
+    if (localLinkDisplay) copyToClipboard(localLinkDisplay.textContent || '', 'Local link copied');
+});
+
+// Local Inbox
+createInboxLocalBtn?.addEventListener('click', handleCreateInboxLocal);
+copyInboxLocalLinkBtn?.addEventListener('click', () => {
+    if (inboxLocalLinkEl) copyToClipboard(inboxLocalLinkEl.textContent || '', 'Local inbox link copied');
+});
+
+// Internet Inbox
+createInboxInternetBtn?.addEventListener('click', handleCreateInboxInternet);
+copyInboxInternetLinkBtn?.addEventListener('click', () => {
+    if (inboxInternetLinkEl) copyToClipboard(inboxInternetLinkEl.textContent || '', 'Internet inbox link copied');
+});
+
+copyPeerIdBtn?.addEventListener('click', () => {
+    if (currentPeerId) copyToClipboard(currentPeerId, 'ID copied');
+});
+
+// P2P (UI di connessione manuale rimossa: il motore PeerJS gira headless)
+connectPeerBtn?.addEventListener('click', connectToPeer);
+disconnectPeerBtn?.addEventListener('click', disconnectFromPeer);
+generateWebLinkBtn.addEventListener('click', generateWebLink);
+copyWebLinkBtn.addEventListener('click', () => {
+    if (webLinkDisplay) copyToClipboard(webLinkDisplay.textContent || '', 'Web link copied');
+});
+
+// ---------- Init ----------
+// Listen for download-progress events from HTTP server (for "Generate Local Link" and "Inbox" downloads)
+listen('download-progress', (event) => {
+    const progress: DownloadProgress = event.payload as DownloadProgress;
+    // Only update if this is not an active WebRTC download (prevents duplicate bars)
+    // WebRTC downloads use activeDownloads directly in processIncomingMessage
+    // But inbox downloads (peer_ip === 'inbox') should be shown
+    if (!activeWebRtcDownloads.has(progress.hash) || progress.peer_ip === 'inbox') {
+        // Update the active downloads map
+        if (progress.progress >= 100) {
+            // Download completed, remove it
+            activeDownloads.delete(progress.hash);
+            // Record as a download ONCE (guard against repeated 100% events
+            // from the backend, which would otherwise create duplicate rows)
+            if (!recordedDownloadHashes.has(progress.hash)) {
+                recordedDownloadHashes.add(progress.hash);
+                addRecentTransfer('download', progress.filename, progress.total_bytes);
+            }
+            // File ricevuto via inbox HTTP: il backend lo ha salvato nella
+            // shared-folder -> aggiorna la lista per mostrarlo subito.
+            if (progress.peer_ip === 'inbox') loadFiles();
+        } else {
+            // Add or update the download in the map
+            activeDownloads.set(progress.hash, progress);
+            // Trasferimento HTTP del server locale: mai TURN -> LED sempre verde
+            connectionPaths.set(progress.hash, 'direct');
+        }
+        // Update UI with ALL active downloads
+        updateDownloadProgress(Array.from(activeDownloads.values()));
+    }
+}).catch(console.error);
+
+// Listen for upload-progress events from HTTP server (for "Generate Local Link" uploads)
+listen('upload-progress', (event) => {
+    const progress: UploadProgress = event.payload as UploadProgress;
+    // Use unique key: peer_id + '-' + hash (for HTTP, peer_id is like "http-192.168.1.100")
+    const key = (progress.peer_id || 'http') + '-' + progress.hash;
+    // Update the active uploads map
+    if (progress.hash) {
+        if (progress.progress >= 100) {
+            // Upload completed, remove it
+            activeUploads.delete(key);
+            // Record as an upload ONCE (guard against repeated 100% events)
+            if (!recordedUploadHashes.has(key)) {
+                recordedUploadHashes.add(key);
+                addRecentTransfer('upload', progress.filename, progress.total_bytes);
+            }
+        } else {
+            // Add or update the upload in the map
+            activeUploads.set(key, progress);
+            // Trasferimento HTTP del server locale: mai TURN -> LED sempre verde
+            connectionPaths.set(key, 'direct');
+        }
+    }
+    // Update UI with ALL active uploads
+    renderUploadProgressList();
+}).catch(console.error);
+   
+    // Polling progress (500ms) - only for HTTP uploads, P2P uploads use activeUploads directly
+    const recordedUploadHashes = new Set<string>();
+    const recordedDownloadHashes = new Set<string>();
+    setInterval(async () => {
+        // FIX: fast-path — skip everything when the local server is not running.
+        if (!serverRunning) return;
+        let httpUploads: UploadProgress[] = [];
+        try {
+            httpUploads = await invoke<UploadProgress[]>('get_upload_progress');
+        } catch (error) {
+            console.error('Error polling upload progress:', error);
+            return;
+        }
+        // FIX: fast-path — no active uploads (neither in backend nor in the local
+        // activeUploads map driven by P2P events). Avoids log spam and DOM churn
+        // when the app is idle.
+        if (httpUploads.length === 0 && activeUploads.size === 0) return;
+        console.log('[DEBUG upload] poll get_upload_progress ->', httpUploads.length, 'HTTP uploads');
+        // Update only HTTP uploads in the map (they have hash, no peer prefix)
+        httpUploads.forEach(u => {
+            if (u.hash) {
+                // Use unique key: peer_id + '-' + hash
+                const key = (u.peer_id || 'http') + '-' + u.hash;
+                activeUploads.set(key, u);
+                // Trasferimento HTTP del server locale: mai TURN -> LED sempre verde
+                connectionPaths.set(key, 'direct');
+                // Record completed uploads ONCE (avoid duplicates from polling)
+                if (u.progress === 100 && !recordedUploadHashes.has(key)) {
+                    recordedUploadHashes.add(key);
+                    addRecentTransfer('upload', u.filename, u.total_bytes);
+                }
+            }
+        });
+        // Remove completed uploads from the active display.
+        // NOTE: we intentionally KEEP the hash in recordedUploadHashes so the
+        // same completed upload is never recorded twice (the backend may keep
+        // reporting it at 100% on subsequent polls).
+        for (const [key, u] of activeUploads) {
+            if (u.progress === 100) {
+                activeUploads.delete(key);
+            }
+        }
+        // Update UI
+        renderUploadProgressList();
+    }, 500);
+
+document.addEventListener('DOMContentLoaded', async () => {
+    // Initialize empty upload list (container hidden)
+    renderUploadProgressList();
+    resetDownloadProgress();
+    renderRecentTransfers();
+    loadFiles();
+    await loadNetworkInfo();
+    // Auto-start HTTP server only if explicitly enabled by user
+    // (avoids opening a port at startup that wasn't requested).
+    if (localStorage.getItem('autoStartServer') === 'true') {
+        await handleStartServer();
+    }
+    await initPeer();
+    // Cache TURN limit (Fase 2): blocca file > 100MB su TURN.
+    invoke<{ max_file_size: number; max_file_size_buffer: number; rejections_total: number }>('get_turn_limits').then((limits) => { (window as any).__turnMaxFileSize = limits.max_file_size; }).catch(() => { (window as any).__turnMaxFileSize = 100 * 1024 * 1024; });
+    // Listen for system resume from hibernation/suspension (emitted by Rust backend)
+    listen('system-resumed', () => {
+        console.log('🔄 System resumed. Restoring connections...');
+        handleSystemResume();
+    }).catch(console.error);
+    await loadPeers();
+    updateContext(currentContext);
+
+    // ===== Pulsante Help (lampeggiante con tooltip) =====
+    const helpBtn = document.querySelector('.help-btn') as HTMLElement | null;
+    if (helpBtn) {
+        // Ferma l'animazione del pulse alla prima interazione (hover o click)
+        helpBtn.addEventListener('mouseenter', () => {
+            helpBtn.classList.add('interacted');
+        });
+
+        // Click: toggle tooltip (critico per mobile, dove non esiste l'hover)
+        helpBtn.addEventListener('click', (e: MouseEvent) => {
+            e.stopPropagation();
+            helpBtn.classList.toggle('show-tooltip');
+        });
+
+        // Chiudi il tooltip se si clicca fuori dal pulsante
+        document.addEventListener('click', () => {
+            helpBtn.classList.remove('show-tooltip');
+        });
+
+        // Tooltip automatico al primo avvio: mostra le istruzioni per 5 secondi
+        if (!localStorage.getItem('helpSeen')) {
+            setTimeout(() => {
+                helpBtn.classList.add('show-tooltip');
+                setTimeout(() => {
+                    helpBtn.classList.remove('show-tooltip');
+                    localStorage.setItem('helpSeen', 'true');
+                }, 5000);
+            }, 2000);
+        }
+    }
+
+    // Event delegation for cancel buttons (download and upload)
+    document.addEventListener('click', async (event) => {
+        const target = event.target as HTMLElement;
+        const cancelBtn = target.closest('.cancel-btn');
+        if (!cancelBtn) return;
+        
+        const downloadKey = cancelBtn.getAttribute('data-download-key');
+        const uploadKey = cancelBtn.getAttribute('data-upload-key');
+        const key = downloadKey || uploadKey;
+        
+        if (!key) return;
+        
+        // Determine if this is a download or upload
+        const isDownload = !!downloadKey;
+        
+        try {
+            if (isDownload) {
+                // FIX #4: chiamare SOLO cancel_download (non più cancel_upload).
+                // cancel_download è sufficiente per:
+                // 1) download_file locale (download_tracker)
+                // 2) stream_file P2P (download_tracker)
+                // 3) inbox_upload_handler (download_tracker)
+                // 4) ProgressTrackingStream (download_tracker)
+                // La doppia chiamata causava race condition sul mutex active.
+                await invoke('cancel_download', { hash: key });
+                console.log(`❌ Download annullato: ${key}`);
+                // Mark as cancelled in frontend map (for P2P download loops)
+                const existing = activeDownloads.get(key);
+                if (existing) {
+                    existing.cancelled = true;
+                    activeDownloads.set(key, existing);
+                    // FIX #2: notifica il mittente (via WebRTC) per fermare l'invio chunk.
+                    // Senza questo, il mittente continua a leggere il file e a inviare
+                    // chunk sul data channel fino al termine del loop — sprecando
+                    // banda e CPU.
+                    // FIX: usa la mappa `connections` già tracciata (Map<peerId, DataConnection>)
+                    // invece di accedere a `peer.connections[senderPeer][0]` che è una
+                    // struttura interna di PeerJS non documentata e può restituire
+                    // una connessione chiusa anche se ne esistono altre attive.
+                    const senderPeer = existing.peer_ip;
+                    if (senderPeer && senderPeer !== 'inbox') {
+                        // Prima prova la mappa tipizzata `connections`
+                        let conn = connections.get(senderPeer);
+                        // Fallback: cerca in peer.connections (struttura interna PeerJS)
+                        if (!conn && peer && peer.open) {
+                            const conns: any[] = (peer as any).connections?.[senderPeer] || [];
+                            conn = conns.find((c: any) => c && c.open) || conns[0];
+                        }
+                        if (conn && (conn as any).open) {
+                            try {
+                                (conn as DataConnection).send(JSON.stringify({ type: 'cancel_upload', hash: key }));
+                            } catch (e) { /* best-effort */ }
+                        }
+                    }
+                }
+            } else {
+                // Look up the upload to get the actual hash for the backend
+                const existing = activeUploads.get(key);
+                const uploadHash = existing ? existing.hash : key;
+                await invoke('cancel_upload', { hash: uploadHash });
+                console.log(`❌ Upload annullato: ${key}`);
+                if (existing) {
+                    existing.cancelled = true;
+                    activeUploads.set(key, existing);
+                }
+            }
+            
+            // Remove from active maps
+            // FIX #6: animazione "cancellazione in corso" prima della rimozione,
+            // per dare feedback visivo all'utente e prevenire click multipli.
+            if (isDownload) {
+                const row = downloadProgressListLeft?.querySelector(
+                    `[data-download-id="${CSS.escape(key)}"]`
+                );
+                const cancelBtn = row?.querySelector<HTMLButtonElement>('.cancel-btn');
+                // Disabilita immediatamente il pulsante per evitare doppi click
+                if (cancelBtn) {
+                    cancelBtn.disabled = true;
+                    cancelBtn.textContent = '⏳';
+                }
+                if (row) {
+                    row.classList.add('cancelling');
+                    setTimeout(() => {
+                        activeDownloads.delete(key);
+                        updateDownloadProgress(Array.from(activeDownloads.values()));
+                    }, 250);
+                } else {
+                    activeDownloads.delete(key);
+                    updateDownloadProgress(Array.from(activeDownloads.values()));
+                }
+                // Feedback visivo nel footer
+                if (footerStatus) {
+                    footerStatus.textContent = '⏹ Download annullato';
+                    footerStatus.className = 'status';
+                    setTimeout(() => {
+                        if (footerStatus.textContent === '⏹ Download annullato') {
+                            footerStatus.textContent = '';
+                            footerStatus.className = 'status';
+                        }
+                    }, 2000);
+                }
+            } else {
+                const row = uploadProgressListRight?.querySelector(
+                    `[data-upload-id="${CSS.escape(key)}"]`
+                );
+                const cancelBtn = row?.querySelector<HTMLButtonElement>('.cancel-btn');
+                if (cancelBtn) {
+                    cancelBtn.disabled = true;
+                    cancelBtn.textContent = '⏳';
+                }
+                if (row) {
+                    row.classList.add('cancelling');
+                    setTimeout(() => {
+                        activeUploads.delete(key);
+                        renderUploadProgressList();
+                    }, 250);
+                } else {
+                    activeUploads.delete(key);
+                    renderUploadProgressList();
+                }
+                if (footerStatus) {
+                    footerStatus.textContent = '⏹ Upload annullato';
+                    footerStatus.className = 'status';
+                    setTimeout(() => {
+                        if (footerStatus.textContent === '⏹ Upload annullato') {
+                            footerStatus.textContent = '';
+                            footerStatus.className = 'status';
+                        }
+                    }, 2000);
+                }
+            }
+        } catch (error) {
+            console.error('Errore annullamento:', error);
+        }
+    });
+});
+
+
