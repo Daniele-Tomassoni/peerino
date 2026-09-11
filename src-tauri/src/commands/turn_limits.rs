@@ -70,9 +70,9 @@ mod tests {
 
     #[test]
     fn default_limits() {
-        // Default 100 MB
-        assert_eq!(get_turn_max_file_size(), 104_857_600);
-        // Buffer 110 MB
-        assert_eq!(get_turn_max_file_size_buffer(), 115_343_360);
+        // Default 1 KB (Metered free tier, temporary)
+        assert_eq!(get_turn_max_file_size(), 1024);
+        // Buffer = 1024 + 102 = 1126 bytes (+10%)
+        assert_eq!(get_turn_max_file_size_buffer(), 1126);
     }
 }
