@@ -1,84 +1,68 @@
 #!/usr/bin/env python3
-"""Batch translate remaining Italian strings in Rust files."""
+"""Batch translate remaining Italian strings in peerino.md."""
 import os
 
-replacements = {
-    'src-tauri/src/commands/p2p/generate_web_link.rs': [
-        ('//    Risolve automaticamente quale provider usare in base alle env, con',
-         '//    Automatically resolves which provider to use based on env, with'),
-        ('//    fetch asincrono per metered.ca. Restituisce un IceResolution che include',
-         '//    async fetch for metered.ca. Returns an IceResolution that includes'),
-        ('//    l\'array iceServers pronto per il browser (formato WebRTC standard).',
-         '//    the iceServers array ready for the browser (standard WebRTC format).'),
-        ('// Override manuale del signaling (parametro esplicito del comando Tauri).',
-         '// Manual signaling override (explicit Tauri command parameter).'),
-        ('// NOTA: STUN e TURN sono ora inclusi SOLO nel parametro `&ice=<base64>` sotto.',
-         '// NOTE: STUN and TURN are now included ONLY in the `&ice=<base64>` parameter below.'),
-        ('// Rimossi i parametri ridondanti `&stunUrls=` e `&turnUrls/turnUser/turnPass=`',
-         '// Removed redundant `&stunUrls=` and `&turnUrls/turnUser/turnPass=` params'),
-        ('// perché il parametro `&ice` (formato WebRTC standard) li contiene già tutti.',
-         '// because the `&ice` param (standard WebRTC format) already contains them all.'),
-        ('// Questo evita config duplicata/conflict nel browser.',
-         '// This avoids duplicate/conflicting config in the browser.'),
-        ('// TURN: credenziali statiche legacy (backward compat). Se il chiamante passa',
-         '// TURN: legacy static credentials (backward compat). If the caller passes'),
-        ('// esplicitamente turn_username + turn_password e NON c\'è un TURN provider',
-         '// explicit turn_username + turn_password and there is NO TURN provider'),
-        ('// configurato, li aggiungiamo come fallback legacy (parametri separati).',
-         '// configured, we add them as a legacy fallback (separate params).'),
-        ('// Provider TURN unificato: passa l\'intero array iceServers come parametro',
-         '// Unified TURN provider: pass the entire iceServers array as a parameter'),
-        ('// base64. Il browser lo deserializza e lo passa direttamente a RTCPeerConnection.',
-         '// base64. The browser deserializes it and passes it directly to RTCPeerConnection.'),
-        ('// Formato: &ice=<base64(JSON)>. Questo è il modo raccomandato per il browser',
-         '// Format: &ice=<base64(JSON)>. This is the recommended approach for the browser'),
-        ('// perché supporta QUALSIASI provider (metered, coturn self-hosted, misto).',
-         '// because it supports ANY provider (metered, self-hosted coturn, mixed).'),
-        ('// Diagnostica dettagliata: quanti STUN, quanti TURN, quale provider.',
-         '// Detailed diagnostics: how many STUN, how many TURN, which provider.'),
-        ('// Warning esplicito quando il link è solo-STUN: l\'utente (e lo sviluppatore',
-         '// Explicit warning when the link is STUN-only: the user (and the developer'),
-        ('// nei log) capisce subito perché la connessione potrebbe fallire su NAT',
-         '// in the logs) immediately understands why the connection might fail on'),
-        ('// simmetrico o CGNAT. Suggerisce anche la remediation concreta.',
-         '// symmetric NAT or CGNAT. It also suggests the concrete remediation.'),
-        ('"File non trovato nell\'indice"', '"File not found in index"'),
-        ('"File non presente su disco: {}"', '"File not present on disk: {}"'),
-        ('"PeerID non disponibile. Assicurati che PeerJS sia connesso."',
-         '"PeerID unavailable. Ensure PeerJS is connected."'),
-        ('// Usa P2P_WEB_URL (Netlify) come base URL: raggiungibile da internet.',
-         '// Use P2P_WEB_URL (Netlify) as the base URL: reachable from the internet.'),
-        ('// Il fallback LAN viene tentato tramite il parametro \'lan=\' aggiunto sotto.',
-         '// The LAN fallback is attempted via the \'lan=\' parameter added below.'),
-        ('"❌ Link SENZA TURN servers: solo STUN. Connessioni P2P su"',
-         '"❌  Link WITHOUT TURN servers: STUN only. P2P connections on"'),
-        ('"   NAT simmetrico o dietro CGNAT (es. Iliad/Ho.Mobile) falliranno."',
-         '"   symmetric NAT or behind CGNAT (e.g. Iliad/Ho.Mobile) will fail."'),
-        ('"   Remediation: upgrade metered a piano paid OPPURE configura"',
-         '"   Remediation: upgrade metered to a paid plan OR configure"'),
-        ('"   un VPS con coturn self-hosted (TURN_URLS + TURN_AUTH_SECRET)."',
-         '"   a VPS with self-hosted coturn (TURN_URLS + TURN_AUTH_SECRET)."'),
-    ],
-}
+path = 'peerino.md'
+with open(path, 'r', encoding='utf-8') as f:
+    content = f.read()
 
-for filepath, pairs in replacements.items():
-    if not os.path.exists(filepath):
-        print(f'SKIP (not found): {filepath}')
-        continue
-    with open(filepath, 'r') as f:
-        content = f.read()
-    modified = False
-    for old, new in pairs:
-        if old in content:
-            content = content.replace(old, new)
-            modified = True
-        else:
-            print(f'  NOT FOUND in {filepath}: {old[:80]}')
-    if modified:
-        with open(filepath, 'w') as f:
-            f.write(content)
-        print(f'UPDATED: {filepath}')
+replacements = [
+    ('# Peerino — Documento di Sintesi del Progetto', '# Peerino — Project Summary Document'),
+    ('> Documento di analisi tecnica del progetto **Peerino** (P2P File Sharing App), versione 3.2.0.',
+     '> Technical analysis document of the **Peerino** project (P2P File Sharing App), version 3.2.0.'),
+    ('> Tutte le affermazioni sono supportate da evidenze rinvenute nel codice sorgente; in caso di dubbio, l\'informazione è segnalata esplicitamente nella sezione *Limitazioni*.',
+     '> All claims are supported by evidence found in the source code; in case of doubt, the information is explicitly flagged in the *Limitations* section.'),
+    ('## 1. Panoramica del Progetto', '## 1. Project Overview'),
+    ('### 1.1 Scopo e Dominio', '### 1.1 Purpose and Domain'),
+    ('**Peerino** è un\'applicazione desktop cross-platform per la **condivisione di file peer-to-peer** (P2P) costruita con **Tauri 2.0** (Rust backend + WebView frontend). L\'obiettivo dichiarato nel file',
+     '**Peerino** is a cross-platform desktop application for **peer-to-peer file sharing** (P2P) built with **Tauri 2.0** (Rust backend + WebView frontend). The goal stated in file'),
+    ('è realizzare un sistema di condivisione file *decentralizzato*, *senza server centrali* e con un\'architettura incrementale articolata in sei fasi di sviluppo.',
+     'is to build a *decentralized* file sharing system, *without central servers*, with an incremental architecture organized into six development phases.'),
+    ('Il dominio applicativo spazia dalla condivisione file in rete locale (LAN/WiFi) alla distribuzione di file su Internet via WebRTC, con supporto per il download diretto da browser (P2P-to-Web) e per la ricezione file da browser (Scatola di Consegna Inversa). È prevista l\'introduzione di un sistema di crediti interni (Fase 5) e di un\'app mobile (Fase 6), entrambe non ancora implementate ma documentate come roadmap.',
+     'The application domain spans from file sharing on local networks (LAN/WiFi) to file distribution over the Internet via WebRTC, with support for direct browser downloads (P2P-to-Web) and file reception from browsers (Reverse Delivery Box). The introduction of an internal credit system (Phase 5) and a mobile app (Phase 6) is planned, both not yet implemented but documented in the roadmap.'),
+    ('### 1.2 Pubblico Target', '### 1.2 Target Audience'),
+    ('- **Utenti finali desktop** che necessitano di condividere file in rete locale o via Internet senza infrastrutture server dedicate.',
+     '- **Desktop end users** who need to share files on local networks or over the Internet without dedicated server infrastructure.'),
+    ('- **Destinatari remoti** (browser o altre istanze Peerino) che ricevono link pubblici auto-generati.',
+     '- **Remote recipients** (browser or other Peerino instances) who receive auto-generated public links.'),
+    ('- **Sviluppatori** che intendono estendere l\'app secondo la roadmap documentata in',
+     '- **Developers** who intend to extend the app according to the roadmap documented in'),
+    ('### 1.3 Stato del Progetto', '### 1.3 Project Status'),
+    ('- **Versione corrente**: `3.2.0` (vedi',
+     '- **Current version**: `3.2.0` (see'),
+    ('- **Fase completata**: Fase 4 (P2P su Internet) con funzionalità avanzate. Il codice contiene già il sistema di cancellazione robusto (P0–P3) documentato in',
+     '- **Completed phase**: Phase 4 (P2P over Internet) with advanced features. The code already contains the robust cancellation system (P0–P3) documented in'),
+    ('- **Fase pianificata**: Fase 5 (P2P locale con crediti) e Fase 6 (mobile).',
+     '- **Planned phase**: Phase 5 (local P2P with credits) and Phase 6 (mobile).'),
+    ('- **Modalità di sviluppo**: il P2P diretto app↔app via PeerJS è implementato ma **nascosto nell\'UI** (la UI di connessione manuale è stata rimossa; il motore PeerJS gira *headless* per generare il PeerID necessario ai link web). Vedi',
+     '- **Development mode**: direct app↔app P2P via PeerJS is implemented but **hidden in the UI** (the manual connection UI was removed; the PeerJS engine runs *headless* to generate the PeerID needed for web links). See'),
+    ('- **Tipo di repository**: non è un repository Git (vedi',
+     '- **Repository type**: not a Git repository (see'),
+    ('### 1.4 Caratteristiche Distintive', '### 1.4 Distinctive Features'),
+    ('- **Streaming obbligatorio**: nessun `Vec<u8>` viene passato per i file (regola architetturale esplicita, vedi',
+     '- **Mandatory streaming**: no `Vec<u8>` is passed for files (explicit architectural rule, see'),
+    ('I file sono gestiti con `tokio::fs` e buffer da 64KB.',
+     'Files are handled with `tokio::fs` and 64KB buffers.'),
+    ('- **Tauri Channels** per lo streaming binario ad alta frequenza (`tauri::ipc::Channel<Vec<u8>>`).',
+     '- **Tauri Channels** for high-frequency binary streaming (`tauri::ipc::Channel<Vec<u8>>`).'),
+    ('- **Capabilities Tauri 2.0** dichiarate in file dedicati',
+     '- **Tauri 2.0 capabilities** declared in dedicated files'),
+    ('mai in `tauri.conf.json`.',
+     'never in `tauri.conf.json`.'),
+    ('- **Database SQLite con WAL mode** e tutte le operazioni incapsulate in `tokio::task::spawn_blocking`.',
+     '- **SQLite database with WAL mode** and all operations encapsulated in `tokio::task::spawn_blocking`.'),
+    ('- **TURN credentials effimere** calcolate localmente via HMAC-SHA1 (schema coturn REST) per i link P2P-to-Web.',
+     '- **Ephemeral TURN credentials** computed locally via HMAC-SHA1 (coturn REST schema) for P2P-to-Web links.'),
+    ('- **Sistema di cancellazione robusta** per download e upload, con flag atomici (`AtomicBool`) e telemetria.',
+     '- **Robust cancellation system** for downloads and uploads, with atomic flags (`AtomicBool`) and telemetry.'),
+]
+
+for old, new in replacements:
+    if old in content:
+        content = content.replace(old, new)
     else:
-        print(f'NO CHANGES: {filepath}')
+        print(f'NOT FOUND: {old[:80]}')
 
-print('Done')
+with open(path, 'w', encoding='utf-8') as f:
+    f.write(content)
+print('Done phase 1')
