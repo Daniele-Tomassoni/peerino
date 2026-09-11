@@ -30,7 +30,7 @@ pub async fn generate_local_link(state: State<'_, AppState>, hash: String) -> Re
     let running = *state.server_running.lock().await;
     if !running {
         return Err(
-            "Il server HTTP non è attivo. Avvia il server per generare il link locale.".to_string(),
+            "The HTTP server is not active. Start the server to generate a local link.".to_string(),
         );
     }
 
