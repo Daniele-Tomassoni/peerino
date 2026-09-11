@@ -31,9 +31,9 @@ pub fn is_safe_filename(filename: &str) -> bool {
 }
 
 /// Restituisce la directory in cui si trova l'eseguibile dell'app.
-/// Questo garantisce che le cartelle `shared-folder`, `temp` e `config`
-/// vengano create nella stessa directory di `peerino.exe`, indipendentemente
-/// dalla directory di lavoro corrente.
+/// This guarantees that the `shared-folder`, `temp`, and `config` folders
+/// are created in the same directory as `peerino.exe`, regardless
+/// of the current working directory.
 pub fn get_app_dir() -> String {
     std::env::current_exe()
         .ok()

@@ -29,7 +29,7 @@ pub async fn open_shared_folder(state: State<'_, AppState>) -> Result<(), String
     let path = if Path::new(&shared_folder).is_absolute() {
         Path::new(&shared_folder).to_path_buf()
     } else {
-        // Se è relativo, risolvi rispetto alla directory corrente
+        // If relative, resolve against the current directory
         std::env::current_dir()
             .map(|cwd| cwd.join(&shared_folder))
             .unwrap_or_else(|_| Path::new(&shared_folder).to_path_buf())

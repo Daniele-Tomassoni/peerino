@@ -327,7 +327,7 @@ async fn inbox_upload_handler(
     headers: axum::http::HeaderMap,
     body: Body,
 ) -> Result<Response, (StatusCode, String)> {
-    // Valida che l'inbox esista
+    // Validate that the inbox exists
     {
         let relay = state.relay_manager.lock().await;
         if relay.get_inbox(&inbox_id).await.is_none() {
@@ -335,12 +335,12 @@ async fn inbox_upload_handler(
         }
     }
 
-    // Estrae e valida il nome file (no path traversal)
+    // Extract and validate the filename (no path traversal)
     let filename = params
         .get("filename")
         .cloned()
         .filter(|f| is_safe_filename(f))
-        .ok_or((StatusCode::BAD_REQUEST, "Nome file mancante o non valido".to_string()))?;
+        .ok_or((StatusCode::BAD_REQUEST, "Missing or invalid filename".to_string()))?;
 
     // Estrae l'hash del file dalla query string (passato dal frontend).
     // Viene usato come chiave per il flag di cancellazione, in modo che il
@@ -356,7 +356,7 @@ async fn inbox_upload_handler(
         .cloned()
         .unwrap_or_else(|| format!("inbox-{}", inbox_id));
 
-    // Gestione conflitti di nome nella shared-folder
+    // Handle name conflicts in the shared-folder
     let shared_folder = state.shared_folder.clone();
     let mut target_path = PathBuf::from(&shared_folder).join(&filename);
     let mut counter = 1;
@@ -372,14 +372,172 @@ async fn inbox_upload_handler(
         counter += 1;
     }
 
-    // Streaming del body verso il file con calcolo SHA-256 in tempo reale
+    // Stream the body to the file with real-time SHA-256 computation
     let mut target_file = File::create(&target_path).await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let mut stream = body.into_data_stream();
     let mut hasher = Sha256::new();
     let mut total_size: u64 = 0;
     
-    // Usa l'hash del file (passato dal frontend) come chiave di tracking,
+    // cosi il pulsante "X" del frontend (che chiama cancel_upload con solo
+    // l'hash) puo trovare e attivare il flag di cancellazione.
+    let download_hash = file_hash.clone();
+    let start_time = Instant::now();
+
+    // Content-Length inviato dal browser (XHR con File): permette di mostrare
+    // una percentuale reale invece di progresso indeterminato.
+    let total_expected: u64 = headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
+
+    // Register cancellation flag for this inbox download
+    let cancelled_flag = state.download_tracker.register_cancellation_flag(&download_hash).await;
+
+    let mut cancelled = false;
+    while let Some(chunk) = stream.next().await {
+        // Check cancellation flag
+        if cancelled_flag.load(std::sync::atomic::Ordering::SeqCst) {
+            log::info!("Inbox download cancelled: {}", download_hash);
+            cancelled = true;
+            break;
+        }
+
+        let chunk = chunk.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        hasher.update(&chunk);
+        target_file.write_all(&chunk).await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        total_size += chunk.len() as u64;
+
+        // Update download tracker (app is receiving file via inbox)
+        let elapsed_secs = start_time.elapsed().as_secs_f64();
+        let speed_mbps = if elapsed_secs > 0.0 {
+            (total_size as f64 / (1024.0 * 1024.0)) / elapsed_secs
+        } else {
+            0.0
+        };
+        let _ = state.download_tracker.update_progress(
+            &download_hash,
+            total_size,
+            total_expected,
+            speed_mbps,
+            "inbox", // peer_ip identifier
+            &filename,
+        ).await;
+
+        // Emit Tauri event for real-time download progress (percentuale reale
+        // grazie a Content-Length; 0% indeterminato solo se l'header manca)
+        if let Some(ref handle) = state.app_handle {
+            let pct = if total_expected > 0 {
+                ((total_size.min(total_expected) as f64 / total_expected as f64) * 100.0) as u32
+            } else {
+                0
+            };
+            let _ = handle.emit("download-progress", crate::commands::download_progress::DownloadProgress {
+                hash: download_hash.clone(),
+                filename: filename.clone(),
+                total_bytes: total_expected,
+                downloaded_bytes: total_size,
+                speed_mbps,
+                peer_ip: "inbox".to_string(),
+                progress: pct,
+                cancelled: false,
+            });
+        }
+    }
+
+    // If cancelled, clean up partial file and remove from tracker
+    if cancelled {
+        let _ = target_file.flush().await;
+        let _ = tokio::fs::remove_file(&target_path).await;
+        let _ = state.download_tracker.remove_download(&download_hash).await;
+        return Err((StatusCode::REQUEST_TIMEOUT, "Download cancelled".to_string()));
+    }
+
+    target_file.flush().await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let hash = hex::encode(hasher.finalize());
+    let final_filename = target_path.file_name().unwrap().to_str().unwrap().to_string();
+
+    // FIX P0: verify hash integrity for inbox HTTP uploads.
+    // The browser computes SHA-256 before sending and passes it as ?hash=...
+    // If the computed hash doesn't match, the file is corrupt or manipulated:
+    // reject it and clean up the temp file (same policy as P2P inbox).
+    let unverified_http = file_hash.is_empty();
+    if !unverified_http && hash != file_hash {
+        log::error!(
+            "❌ HASH MISMATCH (inbox HTTP): expected={}, actual={}. File NON salvato.",
+            file_hash, hash
+        );
+        drop(target_file);
+        if let Err(e) = tokio::fs::remove_file(&target_path).await {
+            log::warn!("Impossibile cancellare file inbox dopo hash mismatch: {}", e);
+        }
+        return Err((StatusCode::BAD_REQUEST, format!(
+            "Hash mismatch: il file ricevuto non corrisponde all'hash dichiarato ({} vs {}). NON salvato.",
+            file_hash, hash
+        )));
+    }
+    if unverified_http {
+        log::warn!("⚠️ Inbox HTTP UNVERIFIED: expected_hash vuoto, hash non verificato.");
+    }
+
+    // Registra nel file_index (in memoria, visibile nella UI) e nel database (persistenza)
+    let file_info = FileInfo {
+        filename: final_filename.clone(),
+        size: total_size,
+        hash: hash.clone(),
+        uploaded_at: chrono::Utc::now().to_rfc3339(),
+    };
+    {
+        let mut file_index = state.file_index.lock().await;
+        file_index.insert(hash.clone(), file_info.clone());
+        let db = state.db.clone();
+        tauri::async_runtime::spawn(async move {
+            let repo = FileRepository::new(db);
+            if let Err(e) = repo.save(&file_info).await {
+                log::error!("Errore salvataggio database inbox: {}", e);
+            }
+        });
+    }
+
+    // Emetti l'evento finale al 100%: senza questo la UI non conclude mai
+    // la riga di download e il file ricevuto non risulta "completato".
+    if let Some(ref handle) = state.app_handle {
+        let _ = handle.emit("download-progress", crate::commands::download_progress::DownloadProgress {
+            hash: download_hash.clone(),
+            filename: final_filename.clone(),
+            total_bytes: total_size,
+            downloaded_bytes: total_size,
+            speed_mbps: 0.0,
+            peer_ip: "inbox".to_string(),
+            progress: 100,
+            cancelled: false,
+        });
+    }
+
+    // Update final download progress (100%) and remove from tracker
+    let _ = state.download_tracker.update_progress(
+        &download_hash,
+        total_size,
+        total_size,
+        0.0, // speed not needed for final update
+        "inbox",
+        &final_filename,
+    ).await;
+    
+    // Remove from tracker after a short delay to allow UI to show 100%
+    let download_tracker = state.download_tracker.clone();
+    let download_hash_clone = download_hash.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+        download_tracker.remove_download(&download_hash_clone).await;
+    });
+
+    log::info!("File ricevuto via inbox locale: {} (hash: {})", final_filename, hash);
+    Ok(Json(json!({"status": "ok", "hash": hash, "filename": final_filename})).into_response())
     // cosi il pulsante "X" del frontend (che chiama cancel_upload con solo
     // l'hash) puo trovare e attivare il flag di cancellazione.
     let download_hash = file_hash.clone();

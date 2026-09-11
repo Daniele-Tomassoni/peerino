@@ -96,16 +96,16 @@ pub async fn create_inbox(state: State<'_, AppState>) -> Result<String, String> 
         }
     }
 
-    // FIX ALTO: passa il limite TURN corrente nel link come `&turnMax=`.
-    // Il browser lo usa per il controllo overlimit invece del valore hardcoded
-    // 104857600, garantendo che browser e backend siano sempre sincronizzati.
+    // FIX HIGH: pass the current TURN limit into the link as `&turnMax=`.
+    // The browser uses it for overlimit control instead of the hardcoded
+    // 104857600 value, ensuring browser and backend stay in sync.
     let turn_max = crate::commands::get_turn_max_file_size();
     link.push_str(&format!("&turnMax={}", turn_max));
 
-    // LAN hint: passa l'indirizzo del server locale come parametro.
-    // La pagina Netlify proverà a usarlo come fallback diretto, ma se il
-    // browser blocca per mixed content, farà automaticamente fallback a
-    // WebRTC con STUN → TURN. Il parametro non rompe il flusso.
+    // LAN hint: pass the local server address as a parameter.
+    // The Netlify page will try to use it as a direct fallback, but if the
+    // browser blocks due to mixed content, it will automatically fall back to
+    // WebRTC with STUN → TURN. The parameter does not break the flow.
     if *state.server_running.lock().await {
         if let Ok(info) = get_local_ip() {
             link.push_str(&format!("&lan=http://{}:{}", info.ip, info.port));

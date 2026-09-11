@@ -28,7 +28,7 @@ impl FileRepository {
         Self { conn }
     }
     
-    /// Inizializza la tabella se non esiste
+    /// Initialize the table if it does not exist
     pub async fn init_table(&self) -> Result<(), String> {
         let conn = self.conn.clone();
         
@@ -173,7 +173,7 @@ impl FileRepository {
         tokio::task::spawn_blocking(move || {
             let db = conn.blocking_lock();
             
-            // Leggi tutti i nomi di file esistenti nel database
+            // Read all existing filenames from the database
             let existing_filenames: std::collections::HashSet<String> = {
                 let mut stmt = db
                     .prepare("SELECT filename FROM files")

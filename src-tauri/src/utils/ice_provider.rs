@@ -42,32 +42,32 @@ use std::time::Duration;
 const METERED_DEFAULT_BASE: &str = "https://peerino.metered.live/api/v1";
 const FETCH_TIMEOUT_SECS: u64 = 10;
 
-/// Provider attualmente attivo, scelto in base alle env.
+/// Currently active provider, chosen based on env vars.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum IceProviderKind {
-    /// Fetch dinamico da metered.ca REST API.
+    /// Dynamic fetch from metered.ca REST API.
     Metered,
-    /// Schema coturn REST con credenziali effimere HMAC-SHA1.
+    /// Coturn REST schema with ephemeral HMAC-SHA1 credentials.
     CoturnRest,
-    /// Solo STUN, nessun TURN (fallback sicuro).
+    /// STUN only, no TURN (safe fallback).
     StaticOnly,
 }
 
-/// Risultato del fetch ICE servers: provider usato + config unificata.
+/// Result of the ICE servers fetch: provider used + unified config.
 #[derive(Debug, Clone, Serialize)]
 pub struct IceResolution {
     pub provider: IceProviderKind,
     pub config: IceLinkConfig,
-    /// Eventuale errore non-fatale (es. metered fallito, fallback a coturn/static).
+    /// Any non-fatal error (e.g. metered failed, fallback to coturn/static).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub warning: Option<String>,
-    /// Entries ritornate dal provider metered (ignorate se non metered).
+    /// Entries returned by the metered provider (ignored if not metered).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metered_entries: Option<Vec<IceServerEntry>>,
 }
 
-/// Entry serializzabile per il browser. Formato compatibile con
-/// `RTCIceServer` di WebRTC (vedi moz:// RTCIceServer).
+/// Serializable entry for the browser. Compatible with
+/// WebRTC `RTCIceServer` (see moz:// RTCIceServer).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IceServerEntry {
     #[serde(rename = "urls")]
@@ -78,15 +78,15 @@ pub struct IceServerEntry {
     pub credential: Option<String>,
 }
 
-/// Risposta JSON dall'API metered (formato documentato).
+/// JSON response from the metered API (documented format).
 #[derive(Debug, Deserialize)]
 struct MeteredResponse {
     #[serde(default)]
     ice_servers: Option<Vec<IceServerEntry>>,
 }
 
-/// Seleziona e usa il provider appropriato. Mai bloccante: in caso di errore
-/// di rete su metered, fallback automatico a coturn o STUN statico.
+/// Select and use the appropriate provider. Never blocking: in case of error
+/// on metered network, automatic fallback to coturn or static STUN.
 pub async fn fetch_ice_servers(ttl_secs: Option<u64>) -> IceResolution {
     // Provider 1: metered.ca REST API (se METERED_API_KEY è presente)
     if let Ok(api_key) = std::env::var("METERED_API_KEY") {
@@ -248,13 +248,13 @@ async fn fetch_metered(api_key: &str) -> Result<Vec<IceServerEntry>, String> {
         }
     }
 
-    // Diagnostica: la risposta non contiene un array di ice servers valido.
-    // Logghiamo il body (primi 500 char) per aiutare il debug (es. free plan
-    // metered restituisce un messaggio di errore, non un array).
+    // Diagnostics: the response does not contain a valid ice servers array.
+    // Log the body (first 500 chars) to aid debugging (e.g. free plan
+    // metered returns an error message, not an array).
     let preview: String = body_text.chars().take(500).collect();
-    log::warn!("metered API: risposta non valida (body preview): {}", preview);
+    log::warn!("metered API: invalid response (body preview): {}", preview);
     Err(format!(
-        "metered API: risposta non contiene ice servers. Body: {}",
+        "metered API: response does not contain ice servers. Body: {}",
         preview
     ))
 }
