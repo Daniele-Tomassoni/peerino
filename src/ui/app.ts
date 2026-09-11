@@ -300,8 +300,7 @@ function applyConnBadge(badge: HTMLElement | null, key: string, fileSize?: numbe
         if (fileSize !== undefined && fileSize > turnMax) {
             badge.className = 'conn-badge turn-overlimit';
             badge.setAttribute('data-tooltip',
-                'This file exceeds the TURN size limit (' + formatSize(turnMax) +
-                '). Connect to WiFi or reduce file size to transfer.');
+                'Your connection requires a relay server. To share this file, connect to WiFi.');
         } else {
             badge.className = 'conn-badge turn';
             badge.setAttribute('data-tooltip', TOOLTIP_TURN);
@@ -1203,7 +1202,7 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
     }
 
     if (detectedPath === 'turn' && fileInfo.size > turnMaxSize) {
-        const errMsg = 'File too large for TURN connection (' + formatSize(fileInfo.size) + ' > ' + formatSize(turnMaxSize) + '). Switch to WiFi or reduce file size.';
+        const errMsg = 'Your connection requires a relay server. To share this file, connect to WiFi.';
         log('TURN size limit exceeded: ' + errMsg);
         // Telemetry: record the rejection on the backend side.
         invoke('record_turn_rejection_cmd').catch(() => { /* best-effort */ });
@@ -1225,8 +1224,7 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
         if (badge) {
             badge.className = 'conn-badge turn-overlimit';
             badge.setAttribute('data-tooltip',
-                'This file exceeds the TURN size limit (' + formatSize(turnMaxSize) +
-                '). Connect to WiFi or reduce file size to transfer.');
+                'Your connection requires a relay server. To share this file, connect to WiFi.');
         }
         try {
             conn.send(JSON.stringify({
@@ -1626,7 +1624,7 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                     detectedPath2 = await detectConnectionPath(conn).catch(() => null);
                 }
                 if (detectedPath2 === 'turn' && msg.size > turnMaxSize2) {
-                    const errMsg = 'File too large for TURN connection (' + formatSize(msg.size) + ' > ' + formatSize(turnMaxSize2) + '). Switch to WiFi or reduce file size.';
+                    const errMsg = 'Your connection requires a relay server. To share this file, connect to WiFi.';
                     log('TURN size limit exceeded (inbox): ' + errMsg);
                     invoke('record_turn_rejection_cmd').catch(() => { /* best-effort */ });
 
