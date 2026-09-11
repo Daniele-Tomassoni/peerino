@@ -19,5 +19,5 @@
 
 #[cfg(test)]
 mod tests {
-    // I test verranno eseguiti con integrazione
+    // Tests will be run with integration
 }

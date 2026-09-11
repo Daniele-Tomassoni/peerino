@@ -72,8 +72,8 @@ pub async fn generate_web_link(
     }
 
     // 4. Determine the base URL of the receiver page.
-    // Usa P2P_WEB_URL (Netlify) come base URL: raggiungibile da internet.
-    // Il fallback LAN viene tentato tramite il parametro 'lan=' aggiunto sotto.
+    // Uses P2P_WEB_URL (Netlify) as the base URL: reachable from the internet.
+    // The LAN fallback is attempted via the 'lan=' parameter added below.
     let page_base = std::env::var("P2P_WEB_URL")
         .map(|u| u.trim_end_matches('/').to_string())
         .unwrap_or_else(|_| "https://courageous-crisp-cff298.netlify.app".to_string());
@@ -85,14 +85,14 @@ pub async fn generate_web_link(
         page_base, peer_id, hash, encoded_filename
     );
 
-    // 6. ICE/signaling configuration: provider unificato (metered > coturn > static).
-    //    Risolve automaticamente quale provider usare in base alle env, con
-    //    fetch asincrono per metered.ca. Restituisce un IceResolution che include
-    //    l'array iceServers pronto per il browser (formato WebRTC standard).
+    // 6. ICE/signaling configuration: unified provider (metered > coturn > static).
+    //    Automatically resolves which provider to use based on env, with
+    //    async fetch for metered.ca. Returns an IceResolution that includes
+    //    the iceServers array ready for the browser (WebRTC standard format).
     let resolution: IceResolution = ice_provider::fetch_ice_servers(None).await;
     let cfg = &resolution.config;
 
-    // Override manuale del signaling (parametro esplicito del comando Tauri).
+    // Manual signaling override (explicit Tauri command parameter).
     let signal = signaling_url
         .filter(|s| !s.is_empty())
         .or_else(|| cfg.signaling_url.clone());
@@ -100,14 +100,14 @@ pub async fn generate_web_link(
         link.push_str(&format!("&signal={}", encode(&sig)));
     }
 
-    // NOTA: STUN e TURN sono ora inclusi SOLO nel parametro `&ice=<base64>` sotto.
-    // Rimossi i parametri ridondanti `&stunUrls=` e `&turnUrls/turnUser/turnPass=`
-    // perché il parametro `&ice` (formato WebRTC standard) li contiene già tutti.
-    // Questo evita config duplicata/conflict nel browser.
+    // NOTE: STUN and TURN are now included ONLY in the `&ice=<base64>` parameter below.
+    // Redundant `&stunUrls=` and `&turnUrls/turnUser/turnPass=` parameters removed
+    // because the `&ice` parameter (WebRTC standard format) already contains them all.
+    // This avoids duplicate/conflicting config in the browser.
 
-    // TURN: credenziali statiche legacy (backward compat). Se il chiamante passa
-    // esplicitamente turn_username + turn_password e NON c'è un TURN provider
-    // configurato, li aggiungiamo come fallback legacy (parametri separati).
+    // TURN: legacy static credentials (backward compat). If the caller passes
+    // explicit turn_username + turn_password and NO TURN provider is
+    // configured, we add them as a legacy fallback (separate parameters).
     if cfg.turn.is_none() {
         if let (Some(u), Some(p)) = (
             turn_username.filter(|s| !s.is_empty()),
@@ -117,16 +117,17 @@ pub async fn generate_web_link(
         }
     }
 
-    // Provider TURN unificato: passa l'intero array iceServers come parametro
-    // base64. Il browser lo deserializza e lo passa direttamente a RTCPeerConnection.
-    // Formato: &ice=<base64(JSON)>. Questo è il modo raccomandato per il browser
-    // perché supporta QUALSIASI provider (metered, coturn self-hosted, misto).
+    // Unified TURN provider: passes the entire iceServers array as a
+    // base64 parameter. The browser deserializes it and passes it directly to
+    // RTCPeerConnection. Format: &ice=<base64(JSON)>. This is the recommended
+    // approach for the browser because it supports ANY provider
+    // (metered, self-hosted coturn, mixed).
     let browser_ice = ice_provider::build_browser_ice_servers(&resolution);
     if !browser_ice.is_empty() {
         let encoded = ice_provider::encode_ice_servers_param(&browser_ice);
         link.push_str(&format!("&ice={}", encode(&encoded)));
 
-        // Diagnostica dettagliata: quanti STUN, quanti TURN, quale provider.
+        // Detailed diagnostics: how many STUN, how many TURN, which provider.
         let n_stun = browser_ice.iter()
             .filter(|e| e.credential.is_none()
                 && e.urls.iter().all(|u| u.starts_with("stun:")))
@@ -135,18 +136,18 @@ pub async fn generate_web_link(
             .filter(|e| e.credential.is_some())
             .count();
         log::info!(
-            "❄️ Link include {} iceServers via {:?} provider ({} STUN, {} TURN)",
+            "❄️ Link includes {} iceServers via {:?} provider ({} STUN, {} TURN)",
             browser_ice.len(), resolution.provider, n_stun, n_turn
         );
 
-        // Warning esplicito quando il link è solo-STUN: l'utente (e lo sviluppatore
-        // nei log) capisce subito perché la connessione potrebbe fallire su NAT
-        // simmetrico o CGNAT. Suggerisce anche la remediation concreta.
+        // Explicit warning when the link is STUN-only: the user (and the developer
+        // reading the logs) immediately understands why the connection might fail
+        // on symmetric NAT or CGNAT. Also suggests concrete remediation.
         if n_turn == 0 {
-            log::warn!("⚠️  Link SENZA TURN servers: solo STUN. Connessioni P2P su");
-            log::warn!("   NAT simmetrico o dietro CGNAT (es. Iliad/Ho.Mobile) falliranno.");
-            log::warn!("   Remediation: upgrade metered a piano paid OPPURE configura");
-            log::warn!("   un VPS con coturn self-hosted (TURN_URLS + TURN_AUTH_SECRET).");
+            log::warn!("⚠️  Link WITHOUT TURN servers: STUN only. P2P connections on");
+            log::warn!("   symmetric NAT or behind CGNAT (e.g. Iliad/Ho.Mobile) will fail.");
+            log::warn!("   Remediation: upgrade metered to a paid plan OR configure");
+            log::warn!("   a VPS with self-hosted coturn (TURN_URLS + TURN_AUTH_SECRET).");
         }
 
         if let Some(warn) = &resolution.warning {

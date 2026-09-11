@@ -30,10 +30,10 @@ pub async fn append_incoming_chunk(
     log::info!("📥 append_incoming_chunk: peer_id={}, chunk_size={}", peer_id, chunk.len());
     let mut uploads = state.incoming_uploads.lock().await;
     let upload = uploads.get_mut(&peer_id)
-        .ok_or_else(|| format!("Upload non inizializzato per peer_id={}", peer_id))?;
+        .ok_or_else(|| format!("Upload not initialized for peer_id={}", peer_id))?;
 
     upload.file.write_all(&chunk).await
-        .map_err(|e| format!("Errore scrittura chunk: {}", e))?;
+        .map_err(|e| format!("Error writing chunk: {}", e))?;
     upload.hasher.update(&chunk);
     upload.written += chunk.len() as u64;
     log::info!("✅ Chunk written, total_written={}", upload.written);

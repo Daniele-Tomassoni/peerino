@@ -18,7 +18,7 @@
 // Stores a stable PeerJS PeerID in config/peer_id.json so that generated
 // P2P-to-Web links remain valid across app restarts. Without this, PeerJS
 // assigns a new random ID on every launch, which orphans any previously
-// generated link (the receiver hangs on "Connessione al mittente...").
+// generated link (the receiver hangs on "Connecting to sender...").
 
 use std::fs;
 use std::path::PathBuf;
@@ -50,7 +50,7 @@ pub fn get_or_create_peer_id(config_dir: &str) -> Result<String, String> {
 
 #[tauri::command]
 pub async fn get_persistent_peer_id() -> Result<String, String> {
-    // Usa la stessa directory dell'app (dove si trova l'eseguibile)
+    // Use the same directory as the app (where the executable is located)
     let config_dir = format!("{}/config", super::get_app_dir());
     get_or_create_peer_id(&config_dir)
 }

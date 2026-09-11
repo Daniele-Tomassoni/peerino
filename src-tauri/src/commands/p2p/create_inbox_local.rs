@@ -43,7 +43,7 @@ pub async fn create_inbox_local(
 
     // Get the local IP address for the URL
     let network_info = get_local_ip()
-        .map_err(|e| format!("Impossibile ottenere IP locale: {}", e))?;
+        .map_err(|e| format!("Failed to get local IP: {}", e))?;
 
     // Direct link to the HTTP upload page (no redirect, no WebRTC params)
     let link = format!(

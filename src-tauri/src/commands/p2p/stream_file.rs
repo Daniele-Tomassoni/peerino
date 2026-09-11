@@ -57,7 +57,7 @@ pub async fn stream_file(
         // Check cancellation flag (frontend "X" button calls cancel_download
         // which sets this flag). The check is cheap (atomic load + try_lock)
         // and lets the user abort a long-running stream without waiting for EOF.
-        // FIX #5: is_cancelled è ora sincrono (try_lock) — non serve .await
+        // FIX #5: is_cancelled is now synchronous (try_lock) — no .await needed
         if state.download_tracker.is_cancelled(&hash) {
             log::info!("Stream cancelled by user: {}", hash);
             return Err("Stream cancelled".to_string());

@@ -31,20 +31,20 @@ const BUFFER_SIZE: usize = 64 * 1024; // 64KB
 fn validate_target_path(target_path: &str) -> Result<PathBuf, String> {
     let path = Path::new(target_path);
     if !path.is_absolute() {
-        return Err("Il percorso di destinazione deve essere assoluto".to_string());
+        return Err("The destination path must be absolute".to_string());
     }
     let parent = path
         .parent()
-        .ok_or_else(|| "Percorso di destinazione non valido".to_string())?;
+        .ok_or_else(|| "Invalid destination path".to_string())?;
     if !parent.exists() {
-        return Err("La cartella di destinazione non esiste".to_string());
+        return Err("The destination folder does not exist".to_string());
     }
     let file_name = path
         .file_name()
         .and_then(|n| n.to_str())
-        .ok_or_else(|| "Nome file di destinazione non valido".to_string())?;
+        .ok_or_else(|| "Invalid destination filename".to_string())?;
     if !is_safe_filename(file_name) {
-        return Err("Nome file di destinazione non valido".to_string());
+        return Err("Invalid destination filename".to_string());
     }
     Ok(path.to_path_buf())
 }
@@ -127,9 +127,9 @@ pub async fn download_file(
             .write_all(&buffer[..bytes_read])
             .await
             .map_err(|e| e.to_string())?;
-    
+
         downloaded_bytes += bytes_read as u64;
-    
+
         // Update download progress tracker
         let elapsed_secs = start_time.elapsed().as_secs_f64();
         let speed_mbps = if elapsed_secs > 0.0 {
@@ -145,7 +145,7 @@ pub async fn download_file(
             "local",
             &file_info.filename,
         ).await;
-    
+
         // Emit Tauri event for real-time download progress
         let progress = if total_size > 0 {
             (downloaded_bytes as f64 / total_size as f64 * 100.0).min(100.0).round() as u32
@@ -162,29 +162,29 @@ pub async fn download_file(
             progress,
             cancelled: false,
         });
-        }
-    
-        // Sync to ensure data is written to disk
-        target_file.sync_all().await.map_err(|e| e.to_string())?;
-    
-        // Update final progress (100%) and remove from tracker
-        let _ = state.download_tracker.update_progress(
-            &hash,
-            total_size,
-            total_size,
-            0.0,
-            "local",
-            &file_info.filename,
-        ).await;
-        let _ = state.download_tracker.remove_download(&hash).await;
-    
-        log::info!("File downloaded: {} (hash: {})", file_info.filename, hash);
-    
-        Ok(file_info.filename)
     }
-    
-    #[cfg(test)]
-    mod tests {
-        // Tests will run with integration
-        // Tauri 2.0 does not support mock_state in tests
-    }
+
+    // Sync to ensure data is written to disk
+    target_file.sync_all().await.map_err(|e| e.to_string())?;
+
+    // Update final progress (100%) and remove from tracker
+    let _ = state.download_tracker.update_progress(
+        &hash,
+        total_size,
+        total_size,
+        0.0,
+        "local",
+        &file_info.filename,
+    ).await;
+    let _ = state.download_tracker.remove_download(&hash).await;
+
+    log::info!("File downloaded: {} (hash: {})", file_info.filename, hash);
+
+    Ok(file_info.filename)
+}
+
+#[cfg(test)]
+mod tests {
+    // Tests will run with integration
+    // Tauri 2.0 does not support mock_state in tests
+}

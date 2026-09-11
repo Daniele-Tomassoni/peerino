@@ -16,7 +16,7 @@
 // Create reverse inbox for P2P-to-Web file receiving
 // Allows browsers to upload files directly to the peer via WebRTC
 //
-// Uses P2P_WEB_URL (Netlify, poi https://peerino.com) as the base URL for the receiver page.
+// Uses P2P_WEB_URL (Netlify, later https://peerino.com) as the base URL for the receiver page.
 // The page connects to the sender via PeerJS and sends files directly (no relay).
 //
 // ICE/signaling configuration embedded in the link (env-driven), same scheme as
@@ -40,7 +40,7 @@ const INBOX_EXPIRY_SECS: u64 = 24 * 60 * 60;
 pub async fn create_inbox(state: State<'_, AppState>) -> Result<String, String> {
     // Get the current PeerID (updated by PeerJS on connect)
     let peer_id = state.peer_id.lock().await.clone()
-        .ok_or_else(|| "PeerID non disponibile. Assicurati che PeerJS sia connesso.".to_string())?;
+        .ok_or_else(|| "PeerID unavailable. Ensure PeerJS is connected.".to_string())?;
 
     // Store the inbox ID in the relay manager for tracking (24h expiry + cleanup)
     let inbox_id = {
@@ -48,12 +48,12 @@ pub async fn create_inbox(state: State<'_, AppState>) -> Result<String, String> 
         relay.create_inbox().await.map_err(|e| e.to_string())?
     };
 
-    // Usa P2P_WEB_URL (Netlify) come base URL: raggiungibile da internet.
-    // Il fallback LAN viene tentato tramite il parametro 'lan=' aggiunto sotto:
-    // - Se mittente e destinatario sono sulla stessa rete, il browser proverà
-    //   il fetch al server locale ma potrebbe essere bloccato per mixed content
-    //   (pagina HTTPS che chiama HTTP). In tal caso, fallback automatico a WebRTC.
-    // - Il parametro 'lan=' non rompe nulla: è solo un tentativo ottimistico.
+    // Use P2P_WEB_URL (Netlify) as the base URL: reachable from the internet.
+    // The LAN fallback is attempted via the 'lan=' parameter added below:
+    // - If sender and receiver are on the same network, the browser will try
+    //   fetching the local server but it may be blocked by mixed content
+    //   (HTTPS page calling HTTP). In that case, it automatically falls back to WebRTC.
+    // - The 'lan=' parameter does not break anything: it is just an optimistic attempt.
     let page_base = std::env::var("P2P_WEB_URL")
         .map(|u| u.trim_end_matches('/').to_string())
         .unwrap_or_else(|_| "https://courageous-crisp-cff298.netlify.app".to_string());
@@ -64,9 +64,9 @@ pub async fn create_inbox(state: State<'_, AppState>) -> Result<String, String> 
         page_base, peer_id, inbox_id
     );
 
-    // ICE configuration con TTL allineato alla validità inbox (24h): le credenziali
-    // restano valide per tutta la vita dell'inbox. Usa il provider unificato
-    // (metered > coturn > static) per supportare qualunque provider TURN futuro.
+    // ICE configuration with TTL aligned to inbox validity (24h): credentials
+    // remain valid for the entire life of the inbox. Uses the unified provider
+    // (metered > coturn > static) to support any future TURN provider.
     let resolution: IceResolution = ice_provider::fetch_ice_servers(Some(INBOX_EXPIRY_SECS)).await;
     let cfg = &resolution.config;
 
@@ -74,12 +74,12 @@ pub async fn create_inbox(state: State<'_, AppState>) -> Result<String, String> 
         link.push_str(&format!("&signal={}", encode(&sig)));
     }
 
-    // NOTA: STUN e TURN sono ora inclusi SOLO nel parametro `&ice=<base64>` sotto.
-    // Rimossi i parametri ridondanti `&stunUrls=` e `&turnUrls/turnUser/turnPass=`
-    // perché il parametro `&ice` (formato WebRTC standard) li contiene già tutti.
+    // NOTE: STUN and TURN are now included ONLY in the `&ice=<base64>` parameter below.
+    // Redundant `&stunUrls=` and `&turnUrls/turnUser/turnPass=` parameters removed
+    // because the `&ice` parameter (WebRTC standard format) already contains them all.
 
-    // Provider TURN unificato: passa l'intero array iceServers come parametro
-    // base64 (formato &ice=...). Supporta qualsiasi provider (metered/coturn/...).
+    // Unified TURN provider: passes the entire iceServers array as a parameter
+    // base64 (format &ice=...). Supports any provider (metered/coturn/...).
     let browser_ice = ice_provider::build_browser_ice_servers(&resolution);
     if !browser_ice.is_empty() {
         let encoded = ice_provider::encode_ice_servers_param(&browser_ice);
@@ -92,7 +92,7 @@ pub async fn create_inbox(state: State<'_, AppState>) -> Result<String, String> 
         );
 
         if n_turn == 0 {
-            log::warn!("Inbox SENZA TURN: solo STUN. NAT simmetrico/CGNAT non funzioneranno. Considera upgrade metered o VPS coturn.");
+            log::warn!("Inbox WITHOUT TURN: STUN only. Symmetric NAT/CGNAT will not work. Consider metered upgrade or VPS coturn.");
         }
     }
 

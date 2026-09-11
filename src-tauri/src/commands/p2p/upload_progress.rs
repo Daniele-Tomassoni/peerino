@@ -21,7 +21,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-/// Struttura per il progresso dell'upload
+/// Upload progress structure
 #[derive(Debug, Clone, Serialize)]
 pub struct UploadProgress {
     pub hash: String,
@@ -29,7 +29,7 @@ pub struct UploadProgress {
     pub bytes_processed: u64,
     pub total_bytes: u64,
     pub progress: u32,
-    /// Velocità di trasferimento in MB/s (calcolata su tempo trascorso)
+    /// Transfer speed in MB/s (calculated over elapsed time)
     pub speed_mbps: f64,
     pub peer_id: String,
     pub cancelled: bool,
@@ -55,13 +55,13 @@ impl UploadProgress {
     }
 }
 
-/// Tracker per gli upload attivi
+/// Tracker for active uploads
 #[derive(Clone)]
 pub struct UploadTracker {
     pub active: Arc<tokio::sync::Mutex<HashMap<String, UploadProgress>>>,
-    /// Flag di cancellazione per gli upload
+    /// Cancellation flag for uploads
     pub cancelled_flags: Arc<tokio::sync::Mutex<HashMap<String, Arc<AtomicBool>>>>,
-    /// FIX: telemetria — contatore totale cancellazioni (upload)
+    /// FIX: telemetry — total cancellation counter (upload)
     pub cancellations_total: Arc<std::sync::atomic::AtomicU64>,
 }
 

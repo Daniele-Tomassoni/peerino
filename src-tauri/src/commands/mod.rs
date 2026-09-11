@@ -28,8 +28,8 @@ pub mod turn_limits;
 pub mod p2p;
 
 // ---------------------------------------------------------------------
-// Limite dimensione file su connessione TURN (post-Fase 2)
-// Lettura lazy: env var letta al primo accesso, poi cachata.
+// TURN connection file size limit (post-Phase 2)
+// Lazy read: env var read on first access, then cached.
 // ---------------------------------------------------------------------
 pub fn get_turn_max_file_size() -> u64 {
     static CACHE: std::sync::OnceLock<u64> = std::sync::OnceLock::new();

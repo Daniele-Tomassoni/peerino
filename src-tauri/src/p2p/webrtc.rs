@@ -39,7 +39,7 @@ pub struct WebRtcConfig {
 impl Default for WebRtcConfig {
     fn default() -> Self {
         Self {
-            // STUN servers: Cina/Russia first, Google/Cloudflare as global fallback.
+            // STUN servers: China/Russia first, Google/Cloudflare as global fallback.
             // WebRTC ICE tries each server in order and uses the first that responds.
             ice_servers: vec![
                 IceServer {

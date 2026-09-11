@@ -53,101 +53,101 @@ pub async fn start_http_server(
             active: download_tracker,
             cancelled_flags: state.download_tracker.cancelled_flags.clone(),
             // FIX: reuse the same AppState telemetry counter
-                cancellations_total: state.download_tracker.cancellations_total.clone(),
-            },
-            upload_tracker: crate::commands::p2p::upload_progress::UploadTracker {
-                active: upload_tracker,
-                cancelled_flags: state.upload_tracker.cancelled_flags.clone(),
-                // FIX: reuse the same AppState telemetry counter
-                cancellations_total: state.upload_tracker.cancellations_total.clone(),
-            },
-            relay_manager,
-            db: state.db.clone(),
-            app_handle: Some(app_handle),
-        });
-    
-        // Bind the TCP listener BEFORE spawning so bind errors are returned synchronously
-        let addr = format!("0.0.0.0:{}", DEFAULT_HTTP_PORT);
-        let listener = tokio::net::TcpListener::bind(&addr)
-            .await
-            .map_err(|e| format!("Failed to bind to port {}: {}", DEFAULT_HTTP_PORT, e))?;
-    
-        // Create shutdown channels
-        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
-    
-        // Save the shutdown channel in state
-        {
-            let mut tx = state.server_shutdown_tx.lock().await;
-            *tx = Some(shutdown_tx);
-        }
-    
-        // Start the server in a separate task
-        let handle = tauri::async_runtime::spawn(async move {
-            log::info!("HTTP server started on port {}...", DEFAULT_HTTP_PORT);
-    
-            // Use select! to handle both execution and shutdown
-            tokio::select! {
-                result = crate::server::http::start_server(server_state, listener) => {
-                    if let Err(e) = result {
-                        log::error!("Critical HTTP server error: {}", e);
-                    } else {
-                        log::info!("HTTP server terminated cleanly");
-                    }
-                }
-                _ = shutdown_rx => {
-                    log::info!("HTTP server stopped on request");
+            cancellations_total: state.download_tracker.cancellations_total.clone(),
+        },
+        upload_tracker: crate::commands::p2p::upload_progress::UploadTracker {
+            active: upload_tracker,
+            cancelled_flags: state.upload_tracker.cancelled_flags.clone(),
+            // FIX: reuse the same AppState telemetry counter
+            cancellations_total: state.upload_tracker.cancellations_total.clone(),
+        },
+        relay_manager,
+        db: state.db.clone(),
+        app_handle: Some(app_handle),
+    });
+
+    // Bind the TCP listener BEFORE spawning so bind errors are returned synchronously
+    let addr = format!("0.0.0.0:{}", DEFAULT_HTTP_PORT);
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .map_err(|e| format!("Failed to bind to port {}: {}", DEFAULT_HTTP_PORT, e))?;
+
+    // Create shutdown channels
+    let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
+
+    // Save the shutdown channel in state
+    {
+        let mut tx = state.server_shutdown_tx.lock().await;
+        *tx = Some(shutdown_tx);
+    }
+
+    // Start the server in a separate task
+    let handle = tauri::async_runtime::spawn(async move {
+        log::info!("HTTP server started on port {}...", DEFAULT_HTTP_PORT);
+
+        // Use select! to handle both execution and shutdown
+        tokio::select! {
+            result = crate::server::http::start_server(server_state, listener) => {
+                if let Err(e) = result {
+                    log::error!("Critical HTTP server error: {}", e);
+                } else {
+                    log::info!("HTTP server terminated cleanly");
                 }
             }
-        });
-    
-        // Save the task handle
-        {
-            let mut handle_opt = state.server_handle.lock().await;
-            *handle_opt = Some(handle);
-        }
-    
-        // Update server state
-        {
-            let mut running = state.server_running.lock().await;
-            *running = true;
-        }
-    
-        Ok(format!("🌐 HTTP server started on port {}", DEFAULT_HTTP_PORT))
-    }
-    
-    /// Stops the HTTP server (if running)
-    /// - Handles graceful shutdown
-    #[tauri::command]
-    pub async fn stop_http_server(state: State<'_, AppState>) -> Result<String, String> {
-        // Check if the server is running
-        {
-            let running = state.server_running.lock().await;
-            if !*running {
-                return Err("The HTTP server is not running".to_string());
+            _ = shutdown_rx => {
+                log::info!("HTTP server stopped on request");
             }
         }
-    
-        // Send the shutdown signal
-        {
-            let tx = state.server_shutdown_tx.lock().await.take();
-            if let Some(tx) = tx {
-                let _ = tx.send(());
-            }
-        }
-    
-        // Update state
-        {
-            let mut running = state.server_running.lock().await;
-            *running = false;
-            let mut handle_opt = state.server_handle.lock().await;
-            *handle_opt = None;
-        }
-    
-        Ok("🛑 HTTP server stopped".to_string())
+    });
+
+    // Save the task handle
+    {
+        let mut handle_opt = state.server_handle.lock().await;
+        *handle_opt = Some(handle);
     }
-    
-    #[cfg(test)]
-    mod tests {
-        // Tests require a mocked AppState
-        // Will be tested with integration at a later time
+
+    // Update server state
+    {
+        let mut running = state.server_running.lock().await;
+        *running = true;
     }
+
+    Ok(format!("🌐 HTTP server started on port {}", DEFAULT_HTTP_PORT))
+}
+
+/// Stops the HTTP server (if running)
+/// - Handles graceful shutdown
+#[tauri::command]
+pub async fn stop_http_server(state: State<'_, AppState>) -> Result<String, String> {
+    // Check if the server is running
+    {
+        let running = state.server_running.lock().await;
+        if !*running {
+            return Err("The HTTP server is not running".to_string());
+        }
+    }
+
+    // Send the shutdown signal
+    {
+        let tx = state.server_shutdown_tx.lock().await.take();
+        if let Some(tx) = tx {
+            let _ = tx.send(());
+        }
+    }
+
+    // Update state
+    {
+        let mut running = state.server_running.lock().await;
+        *running = false;
+        let mut handle_opt = state.server_handle.lock().await;
+        *handle_opt = None;
+    }
+
+    Ok("🛑 HTTP server stopped".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    // Tests require a mocked AppState
+    // Will be tested with integration at a later time
+}

@@ -36,11 +36,11 @@ pub async fn init_incoming_upload(
 
     // Validate filename to prevent path traversal (S1)
     if !is_safe_filename(&filename) {
-        return Err(format!("Nome file non sicuro: {}", filename));
+        return Err(format!("Unsafe filename: {}", filename));
     }
 
-    // Post-Fase 2: blocca upload > TURN_MAX_FILE_SIZE quando la connessione richiede TURN.
-    // Il path è opzionale: se non specificato o LAN/STUN, nessun limite.
+    // Post-Phase 2: block uploads > TURN_MAX_FILE_SIZE when the connection requires TURN.
+    // The path is optional: if not specified or LAN/STUN, no limit applies.
     let is_turn = path.as_deref().map(|p| p.eq_ignore_ascii_case("turn") || p.contains("relay")).unwrap_or(false);
     if is_turn && size > get_turn_max_file_size() {
         record_turn_rejection();

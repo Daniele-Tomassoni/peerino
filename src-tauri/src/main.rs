@@ -28,7 +28,7 @@ use tauri::Emitter;
 use tauri::Listener;
 use tauri::Manager;
 
-// Struttura per i metadati del file
+// File metadata structure
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FileInfo {
     pub filename: String,
@@ -37,37 +37,37 @@ pub struct FileInfo {
     pub uploaded_at: String,
 }
 
-// Stato globale dell'applicazione
+// Global application state
 pub struct AppState {
     pub file_index: Arc<tokio::sync::Mutex<HashMap<String, FileInfo>>>,
     pub db: Arc<tokio::sync::Mutex<rusqlite::Connection>>,
     pub shared_folder: String,
     pub temp_folder: String,
     pub config_folder: String,
-    // Stato del server HTTP
+    // HTTP server state
     pub server_running: tokio::sync::Mutex<bool>,
     pub server_shutdown_tx: tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
     pub server_handle: tokio::sync::Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
-    // Tracker per download
+    // Download tracker
     pub download_tracker: commands::download_progress::DownloadTracker,
-    // Tracker per upload
+    // Upload tracker
     pub upload_tracker: commands::p2p::upload_progress::UploadTracker,
     // P2P state
     pub relay_manager: Arc<tokio::sync::Mutex<p2p::RelayManager>>,
-    // PeerID corrente (da PeerJS) per la generazione di link web P2P-to-Web
+    // Current PeerID (from PeerJS) for generating P2P-to-Web web links
     pub peer_id: tokio::sync::Mutex<Option<String>>,
-    // File hash pending for P2P-to-Web transfer (set when generating web link)
+    // Pending file hash for P2P-to-Web transfer (set when generating web link)
     pub pending_file_hash: tokio::sync::Mutex<Option<String>>,
     // Incoming uploads state (browser → app)
     pub incoming_uploads: Arc<tokio::sync::Mutex<HashMap<String, commands::p2p::upload_state::UploadState>>>,
-    // FIX integrità dati: contatore globale hash mismatch (atomic, no lock).
-    // Incrementato in finalize_incoming_file quando il backend riceve un file
-    // il cui hash non corrisponde a quello dichiarato dal browser. Un valore > 0
-    // indica corruzione chunk o bug nel calcolo hash lato frontend.
+    // FIX data integrity: global hash mismatch counter (atomic, no lock).
+    // Incremented in finalize_incoming_file when the backend receives a file
+    // whose hash does not match the one declared by the browser. A value > 0
+    // indicates chunk corruption or a bug in the frontend hash calculation.
     pub hash_mismatch_total: std::sync::Arc<std::sync::atomic::AtomicU64>,
-    // Contatore upload ricevuti SENZA expected_hash (unverified): indica
-    // browser legacy o bug nel calcolo hash lato mittente. Se troppo alto,
-    // il sistema di integrità è parzialmente bypassato.
+    // Counter for received uploads WITHOUT expected_hash (unverified): indicates
+    // browser legacy or a bug in the sender-side hash calculation. If too high,
+    // the integrity system is partially bypassed.
     pub unverified_uploads_total: std::sync::Arc<std::sync::atomic::AtomicU64>,
 }
 
@@ -75,48 +75,48 @@ fn main() {
     // Initialize logging
     env_logger::init();
 
-    // Carica variabili d'ambiente da .env (es. P2P_WEB_URL, TURN_AUTH_SECRET,
-    // METERED_API_KEY, TURN_URLS). Cerca in ordine di priorità:
+    // Load environment variables from .env (e.g. P2P_WEB_URL, TURN_AUTH_SECRET,
+    // METERED_API_KEY, TURN_URLS). Search in order of priority:
     //   1) $CARGO_MANIFEST_DIR/.env (== src-tauri/.env): single source of truth
-    //      per le variabili backend, valido in dev e release. Valutato a compile-time.
-    //   2) <exe_dir>/.env: accanto a peerino.exe per build release portable.
-    //   3) CWD/.env: fallback per chi lancia da terminale con path relativo.
-    //   4) <exe_dir>/../.env: parent della directory eseguibile (es. src-tauri/).
-    // `.ok()` su ogni tentativo: nessun errore deve bloccare l'avvio se il file
-    // manca in tutte le posizioni (l'app funziona comunque, TURN resterà disabilitato).
+    //      for backend variables, valid in dev and release. Evaluated at compile-time.
+    //   2) <exe_dir>/.env: next to peerino.exe for portable release build.
+    //   3) CWD/.env: fallback for those launching from terminal with relative path.
+    //   4) <exe_dir>/../.env: parent of the executable directory (es. src-tauri/).
+    // `.ok()` on each attempt: no error must block startup if the file
+    // is missing in all positions (the app works anyway, TURN will remain disabled).
     let app_dir_env = utils::get_app_dir();
-    // CARGO_MANIFEST_DIR è la directory di compilazione (= src-tauri/). Aggiungiamo
-    // un candidato canonico "src-tauri/.env" che è single source of truth per le
-    // variabili backend (P2P_WEB_URL, TURN, METERED_API_KEY, ...). In devmode
-    // (cargo run da src-tauri/) questo path esiste. In release (peerino.exe in
-    // target/release/) non esiste, ma i candidati 1/2 lo coprono.
+    // CARGO_MANIFEST_DIR is the build directory (= src-tauri/). We add
+    // a canonical candidate "src-tauri/.env" which is single source of truth for the
+    // backend variables (P2P_WEB_URL, TURN, METERED_API_KEY, ...). In dev mode
+    // (cargo run from src-tauri/) this path exists. In release (peerino.exe in
+    // target/release/) does not exist, but candidates 1/2 cover it.
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let env_candidates = [
         format!("{}/.env", manifest_dir),  // src-tauri/.env (dev + canonical)
-        format!("{}/.env", app_dir_env),   // eseguibile/.env (release portable)
+        format!("{}/.env", app_dir_env),   // executable/.env (release portable)
         ".env".to_string(),                 // CWD/.env
-        format!("{}/../.env", app_dir_env), // eseguibile/../.env
+        format!("{}/../.env", app_dir_env), // executable/../.env
     ];
     let mut env_loaded = false;
     for candidate in &env_candidates {
         if std::path::Path::new(candidate).exists() {
             match dotenvy::from_filename(candidate) {
                 Ok(_) => {
-                    log::info!("📄 .env caricato da: {}", candidate);
+                    log::info!("📄 .env loaded from: {}", candidate);
                     env_loaded = true;
                     break;
                 }
                 Err(e) => {
-                    log::warn!("⚠️ Trovato {} ma errore di parsing: {}", candidate, e);
+                    log::warn!("⚠️ Found {} but parsing error: {}", candidate, e);
                 }
             }
         }
     }
     if !env_loaded {
-        log::info!("ℹ️ Nessun file .env trovato (cercato in: {:?}). Le variabili d'ambiente di sistema saranno usate come fallback.", env_candidates);
+        log::info!("ℹ️ No .env file found (searched in: {:?}). System environment variables will be used as fallback.", env_candidates);
     }
 
-    // Ottieni la directory dell'app (dove si trova l'eseguibile)
+    // Get the app directory (where the executable is located)
     let app_dir = utils::get_app_dir();
     let shared_folder = format!("{}/shared-folder", app_dir);
     let temp_folder = format!("{}/temp", app_dir);
@@ -140,7 +140,7 @@ fn main() {
                     server_shutdown_tx: tokio::sync::Mutex::new(None),
                     server_handle: tokio::sync::Mutex::new(None),
                     download_tracker: commands::download_progress::DownloadTracker::new(),
-                    // Tracker per upload
+                    // Upload tracker
                     upload_tracker: commands::p2p::upload_progress::UploadTracker::new(),
                     // P2P state
                     relay_manager: Arc::new(tokio::sync::Mutex::new(
@@ -185,7 +185,7 @@ fn main() {
          commands::p2p::peers::list_peers,
          commands::p2p::generate_link::generate_public_link,
          commands::p2p::stream_file::stream_file,
-         // P2P-to-Web link con PeerID (Internet)
+         // P2P-to-Web link with PeerID (Internet)
          commands::p2p::generate_web_link::generate_web_link,
          commands::p2p::set_peer_id::set_peer_id,
           utils::peer_id::get_persistent_peer_id,
@@ -206,23 +206,23 @@ fn main() {
          commands::turn_limits::record_turn_rejection_cmd,
         ])
         .setup(|app| {
-            // --- Gestione ripresa da ibernazione/sospensione ---
-            // In Tauri 2.x l'evento di resume è emesso come evento globale ascoltabile.
-            // Registriamo entrambe le varianti note per robustezza.
+            // --- Resume handling from hibernation/suspension ---
+            // In Tauri 2.x the resume event is emitted as a global listable event.
+            // We register both known variants for robustness.
             let app_handle = app.handle().clone();
             for evt in ["tauri://resume", "tauri://resumed"] {
                 let app_handle = app_handle.clone();
                 app.listen(evt, move |_event| {
                     let h = app_handle.clone();
                     tauri::async_runtime::spawn(async move {
-                        // Su Windows la rete può essere ancora inattiva: attendiamo 2s
+                        // On Windows the network may still be inactive: we wait 2s
                         tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                         let _ = h.emit("system-resumed", ());
                     });
                 });
             }
 
-            // Crea le cartelle necessarie in modo asincrono
+            // Create the necessary folders asynchronously
             let shared_folder = app.state::<AppState>().shared_folder.clone();
             let temp_folder = app.state::<AppState>().temp_folder.clone();
             let config_folder = app.state::<AppState>().config_folder.clone();
@@ -240,10 +240,10 @@ fn main() {
                     log::warn!("⚠️ Could not create config folder: {}", e);
                 }
 
-                // Apri il database dopo aver creato la cartella config
+                // Open the database after creating the config folder
                 {
                     let mut db_guard = db.lock().await;
-                    // Prova ad aprire il database persistente
+                    // Try to open the persistent database
                     let db_path = format!("{}/files.db", config_folder);
                     if let Ok(persistent_db) = rusqlite::Connection::open(&db_path) {
                         *db_guard = persistent_db;
@@ -278,15 +278,15 @@ fn main() {
                 }
             });
 
-            // Avvia il task di pulizia temporanea
-            // In Tauri 2.0, i task spawnati vengono cancellati automaticamente alla chiusura
+            // Start the temp cleanup task
+            // In Tauri 2.0, spawned tasks are automatically cancelled on close
             let temp_path = app.state::<AppState>().temp_folder.clone();
             let shared_folder = app.state::<AppState>().shared_folder.clone();
             tauri::async_runtime::spawn(async move {
                 utils::temp_cleanup::start_cleanup_task(&temp_path, &shared_folder).await;
             });
             
-            // Avvia il task di pulizia automatica del relay (link e inbox scaduti)
+            // Start the automatic relay cleanup task (expired links and inboxes)
             let relay_manager = app.state::<AppState>().relay_manager.clone();
             tauri::async_runtime::spawn(async move {
                 loop {

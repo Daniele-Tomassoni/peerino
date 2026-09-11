@@ -26,7 +26,7 @@ use crate::utils::network::get_local_ip;
 /// Returns an error if the HTTP server is not active or file not found.
 #[tauri::command]
 pub async fn generate_local_link(state: State<'_, AppState>, hash: String) -> Result<String, String> {
-    // Verifica che il server HTTP sia attivo
+    // Verify that the HTTP server is active
     let running = *state.server_running.lock().await;
     if !running {
         return Err(

@@ -48,7 +48,7 @@ pub async fn finalize_incoming_file(
     // the upload is marked as "unverified" (telemetry field).
     let unverified = upload.expected_hash.is_empty();
     if !unverified && actual_hash != upload.expected_hash {
-        // Telemetria: incrementa contatore atomico globale.
+        // Telemetry: increment global atomic counter.
         state.hash_mismatch_total
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 

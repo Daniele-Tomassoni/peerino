@@ -13,24 +13,24 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
-// ICE servers provider unificato: astrazione sopra più fonti TURN/STUN.
-// Permette di switchare provider senza modificare il codice frontend:
+// Unified ICE servers provider: abstraction over multiple TURN/STUN sources.
+// Allows switching providers without modifying the frontend code:
 //
-// - **Metered.ca REST API**: fetch dinamico di iceServers via API key.
-//   Transient: da usare finché non si ha un VPS self-hosted.
-//   Env: `METERED_API_KEY` (obbligatoria), `METERED_API_BASE` (opzionale,
+// - **Metered.ca REST API**: dynamic fetch of iceServers via API key.
+//   Transient: use until you have a self-hosted VPS.
+//   Env: `METERED_API_KEY` (required), `METERED_API_BASE` (optional,
 //   default `https://peerino.metered.live/api/v1`).
 //
-// - **Coturn REST (HMAC-SHA1)**: credenziali effimere calcolate localmente.
-//   Self-hosted: la transizione finale. Richiede coturn con
+// - **Coturn REST (HMAC-SHA1)**: ephemeral credentials computed locally.
+//   Self-hosted: the final transition. Requires coturn with
 //   `use-auth-secret` + `static-auth-secret`.
-//   Env: `TURN_AUTH_SECRET` + `TURN_URLS` + opzionale `TURN_CRED_TTL_SECS`.
+//   Env: `TURN_AUTH_SECRET` + `TURN_URLS` + optional `TURN_CRED_TTL_SECS`.
 //
-// - **Static STUN only**: fallback sicuro. Nessun TURN.
-//   Env: solo `STUN_URLS` (opzionale, default Google public).
+// - **Static STUN only**: safe fallback. No TURN.
+//   Env: only `STUN_URLS` (optional, default Google public).
 //
-// Il metodo `fetch_ice_servers` seleziona automaticamente il provider in base
-// alle env disponibili, con priorità metered > coturn > static.
+// The `fetch_ice_servers` method automatically selects the provider based on
+// available env vars, with priority metered > coturn > static.
 
 use crate::utils::turn_creds::{
     ice_link_config_from_env, ice_link_config_from_env_with_ttl, IceLinkConfig,
@@ -88,7 +88,7 @@ struct MeteredResponse {
 /// Select and use the appropriate provider. Never blocking: in case of error
 /// on metered network, automatic fallback to coturn or static STUN.
 pub async fn fetch_ice_servers(ttl_secs: Option<u64>) -> IceResolution {
-    // Provider 1: metered.ca REST API (se METERED_API_KEY è presente)
+    // Provider 1: metered.ca REST API (if METERED_API_KEY is present)
     if let Ok(api_key) = std::env::var("METERED_API_KEY") {
         if !api_key.trim().is_empty() {
             match fetch_metered(&api_key).await {
@@ -104,8 +104,8 @@ pub async fn fetch_ice_servers(ttl_secs: Option<u64>) -> IceResolution {
                                 .ok()
                                 .filter(|s| !s.is_empty()),
                             stun_urls: vec![],
-                            // I campi turn non sono usati dal browser quando
-                            // arrivano via metered_entries; lasciamo placeholder.
+                            // The turn fields are not used by the browser when
+                            // they arrive via metered_entries; we leave a placeholder.
                             turn: None,
                         },
                         warning: None,
@@ -114,7 +114,7 @@ pub async fn fetch_ice_servers(ttl_secs: Option<u64>) -> IceResolution {
                 }
                 Err(e) => {
                     log::warn!(
-                        "⚠️ metered.ca fetch fallito: {}. Fallback a coturn/static STUN.",
+                        "⚠️ metered.ca fetch failed: {}. Falling back to coturn/static STUN.",
                         e
                     );
                     let cfg = if let Some(ttl) = ttl_secs {
@@ -138,7 +138,7 @@ pub async fn fetch_ice_servers(ttl_secs: Option<u64>) -> IceResolution {
         }
     }
 
-    // Provider 2: coturn REST (se TURN_AUTH_SECRET + TURN_URLS sono presenti)
+    // Provider 2: coturn REST (if TURN_AUTH_SECRET + TURN_URLS are present)
     let cfg = if let Some(ttl) = ttl_secs {
         ice_link_config_from_env_with_ttl(ttl)
     } else {
@@ -157,18 +157,18 @@ pub async fn fetch_ice_servers(ttl_secs: Option<u64>) -> IceResolution {
     }
 }
 
-/// Costruisce l'array `iceServers` finale da passare al browser, in formato
-/// JSON compatto (`Vec<IceServerEntry>`) pronto per `new RTCPeerConnection({iceServers})`.
+/// Builds the final `iceServers` array to pass to the browser, in compact
+/// JSON format (`Vec<IceServerEntry>`) ready for `new RTCPeerConnection({iceServers})`.
 pub fn build_browser_ice_servers(resolution: &IceResolution) -> Vec<IceServerEntry> {
     let mut out: Vec<IceServerEntry> = Vec::new();
 
-    // 1) Se metered: usa le entries ritornate dalla REST API (già pronte).
+    // 1) If metered: use the entries returned by the REST API (already ready).
     if let Some(extra) = &resolution.metered_entries {
         out.extend(extra.iter().cloned());
         return out;
     }
 
-    // 2) Altrimenti: STUN da env (o default Google).
+    // 2) Otherwise: STUN from env (or default Google).
     if !resolution.config.stun_urls.is_empty() {
         out.push(IceServerEntry {
             urls: resolution.config.stun_urls.clone(),
@@ -177,7 +177,7 @@ pub fn build_browser_ice_servers(resolution: &IceResolution) -> Vec<IceServerEnt
         });
     }
 
-    // 3) TURN (coturn effimere): un'unica entry con urls/username/credential.
+    // 3) TURN (ephemeral coturn): a single entry with urls/username/credential.
     if let Some(turn) = &resolution.config.turn {
         out.push(IceServerEntry {
             urls: turn.urls.clone(),
@@ -189,13 +189,13 @@ pub fn build_browser_ice_servers(resolution: &IceResolution) -> Vec<IceServerEnt
     out
 }
 
-/// Serializza `iceServers` per inclusione come parametro URL (base64 di JSON).
+/// Serializes `iceServers` for inclusion as a URL parameter (base64 of JSON).
 pub fn encode_ice_servers_param(entries: &[IceServerEntry]) -> String {
     let json = serde_json::to_string(entries).unwrap_or_else(|_| "[]".to_string());
     BASE64.encode(json.as_bytes())
 }
 
-/// Decodifica l'array `iceServers` dal parametro URL (lato browser o test).
+/// Decodes the `iceServers` array from the URL parameter (browser side or test).
 pub fn decode_ice_servers_param(encoded: &str) -> Vec<IceServerEntry> {
     let bytes = match BASE64.decode(encoded.as_bytes()) {
         Ok(b) => b,
@@ -232,9 +232,9 @@ async fn fetch_metered(api_key: &str) -> Result<Vec<IceServerEntry>, String> {
         .await
         .map_err(|e| format!("read body: {}", e))?;
 
-    // La risposta metered può avere due forme:
+    // The metered response can have two forms:
     //   A) { "iceServers": [...] }
-    //   B) [...]  (array diretto, documentazione alternativa)
+    //   B) [...]  (direct array, alternative documentation)
     if let Ok(parsed) = serde_json::from_str::<MeteredResponse>(&body_text) {
         if let Some(entries) = parsed.ice_servers {
             if !entries.is_empty() {

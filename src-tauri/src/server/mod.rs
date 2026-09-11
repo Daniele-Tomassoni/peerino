@@ -15,5 +15,5 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 pub mod http;
 
-// Rielabora la costante dal modulo http
+// Re-exports the constant from the http module
 pub use http::DEFAULT_HTTP_PORT;

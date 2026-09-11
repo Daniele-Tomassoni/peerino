@@ -20,8 +20,8 @@ use std::time::Duration;
 use tokio::fs;
 use tokio::time;
 
-/// Pulisce i file nella cartella temp più vecchi di 1 ora.
-/// Continua anche se un file non può essere rimosso.
+/// Cleans files in the temp folder older than 1 hour.
+/// Continues even if a file cannot be removed.
 pub async fn cleanup_temp_files(temp_path: &str) -> Result<()> {
     let temp_dir = Path::new(temp_path);
 
@@ -39,7 +39,7 @@ pub async fn cleanup_temp_files(temp_path: &str) -> Result<()> {
             let metadata = match entry.metadata().await {
                 Ok(m) => m,
                 Err(e) => {
-                    log::warn!("Impossibile leggere metadata per {:?}: {}", path, e);
+                    log::warn!("Unable to read metadata per {:?}: {}", path, e);
                     continue;
                 }
             };
@@ -47,16 +47,16 @@ pub async fn cleanup_temp_files(temp_path: &str) -> Result<()> {
             let modified = match metadata.modified() {
                 Ok(t) => DateTime::<Utc>::from(t),
                 Err(e) => {
-                    log::warn!("Impossibile leggere timestamp per {:?}: {}", path, e);
+                    log::warn!("Unable to read timestamp per {:?}: {}", path, e);
                     continue;
                 }
             };
 
             if modified < one_hour_ago {
                 if let Err(e) = fs::remove_file(&path).await {
-                    log::warn!("Impossibile rimuovere {:?}: {}", path, e);
+                    log::warn!("Unable to remove {:?}: {}", path, e);
                 } else {
-                    log::info!("Rimosso file temporaneo: {:?}", path);
+                    log::info!("Removed temporary file: {:?}", path);
                 }
             }
         }
@@ -65,9 +65,9 @@ pub async fn cleanup_temp_files(temp_path: &str) -> Result<()> {
     Ok(())
 }
 
-/// Pulisce i file `.tmp` nella shared-folder più vecchi di 1 ora.
-/// Questo rimuove i file temporanei orfani lasciati da upload interrottti
-/// (prima della migrazione verso temp_folder).
+/// Cleans `.tmp` files in the shared-folder older than 1 hour.
+/// This removes orphaned temp files left behind by interrupted uploads
+/// (before the migration to temp_folder).
 pub async fn cleanup_shared_folder_tmp(shared_folder: &str) -> Result<()> {
     let dir = Path::new(shared_folder);
 
@@ -90,7 +90,7 @@ pub async fn cleanup_shared_folder_tmp(shared_folder: &str) -> Result<()> {
             let metadata = match entry.metadata().await {
                 Ok(m) => m,
                 Err(e) => {
-                    log::warn!("Impossibile leggere metadata per {:?}: {}", path, e);
+                    log::warn!("Unable to read metadata per {:?}: {}", path, e);
                     continue;
                 }
             };
@@ -98,16 +98,16 @@ pub async fn cleanup_shared_folder_tmp(shared_folder: &str) -> Result<()> {
             let modified = match metadata.modified() {
                 Ok(t) => DateTime::<Utc>::from(t),
                 Err(e) => {
-                    log::warn!("Impossibile leggere timestamp per {:?}: {}", path, e);
+                    log::warn!("Unable to read timestamp per {:?}: {}", path, e);
                     continue;
                 }
             };
 
             if modified < one_hour_ago {
                 if let Err(e) = fs::remove_file(&path).await {
-                    log::warn!("Impossibile rimuovere {:?}: {}", path, e);
+                    log::warn!("Unable to remove {:?}: {}", path, e);
                 } else {
-                    log::info!("Rimosso file .tmp orfano: {:?}", path);
+                    log::info!("Removed orphan .tmp file: {:?}", path);
                 }
             }
         }
@@ -116,30 +116,30 @@ pub async fn cleanup_shared_folder_tmp(shared_folder: &str) -> Result<()> {
     Ok(())
 }
 
-/// Avvia un task asincrono che pulisce i file temp:
-/// - Esegue una pulizia immediata all'avvio
-/// - Poi pulisce ogni ora
+/// Starts an async task that cleans temp files:
+/// - Performs an immediate cleanup on startup
+/// - Then cleans every hour
 pub async fn start_cleanup_task(temp_path: &str, shared_folder: &str) {
     let temp_path = temp_path.to_string();
     let shared_folder = shared_folder.to_string();
 
-    // ✅ Pulizia immediata all'avvio
+    // ✅ Immediate cleanup on startup
     if let Err(e) = cleanup_temp_files(&temp_path).await {
-        log::error!("Errore nella pulizia iniziale temp: {}", e);
+        log::error!("Error in initial temp cleanup: {}", e);
     }
     if let Err(e) = cleanup_shared_folder_tmp(&shared_folder).await {
-        log::error!("Errore nella pulizia iniziale .tmp shared-folder: {}", e);
+        log::error!("Error in initial .tmp shared-folder cleanup: {}", e);
     }
 
-    // Poi pulisce ogni ora
+    // Then clean every hour
     let mut interval = time::interval(Duration::from_secs(3600));
     loop {
         interval.tick().await;
         if let Err(e) = cleanup_temp_files(&temp_path).await {
-            log::error!("Errore nella pulizia temp: {}", e);
+            log::error!("Error in temp cleanup: {}", e);
         }
         if let Err(e) = cleanup_shared_folder_tmp(&shared_folder).await {
-            log::error!("Errore nella pulizia .tmp shared-folder: {}", e);
+            log::error!("Error in .tmp shared-folder cleanup: {}", e);
         }
     }
 }
@@ -154,15 +154,15 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let temp_path = temp_dir.path().to_str().unwrap();
 
-        // Directory vuota → OK
+        // Empty directory → OK
         let result = cleanup_temp_files(temp_path).await;
         assert!(result.is_ok());
 
-        // Crea un file nuovo
+        // Create a new file
         let file_path = temp_dir.path().join("new.txt");
         fs::write(&file_path, b"test").await.unwrap();
 
-        // Pulizia → il file non viene rimosso (è nuovo)
+        // Cleanup → the file is not removed (it is new)
         cleanup_temp_files(temp_path).await.unwrap();
         assert!(file_path.exists());
     }

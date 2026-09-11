@@ -23,27 +23,27 @@ pub struct NetworkInfo {
     pub port: u16,
 }
 
-/// Rileva l'IP locale della rete (IPv4, non loopback)
-/// Usa TcpListener per trovare un IP valido
-/// Se non trova un IP, restituisce "127.0.0.1" come fallback
+/// Detects the local network IP (IPv4, non-loopback)
+/// Uses TcpListener to find a valid IP
+/// If no IP is found, returns "127.0.0.1" as fallback
 pub fn get_local_ip() -> Result<NetworkInfo, String> {
-    // Prova a bindare a 0.0.0.0:0 per ottenere l'IP locale
+    // Try binding to 0.0.0.0:0 to get the local IP
     let socket = TcpListener::bind("0.0.0.0:0")
-        .map_err(|e| format!("Impossibile bindare socket: {}", e))?;
-    
+        .map_err(|e| format!("Failed to bind socket: {}", e))?;
+
     let local_addr = socket.local_addr()
-        .map_err(|e| format!("Impossibile ottenere indirizzo locale: {}", e))?;
-    
+        .map_err(|e| format!("Failed to get local address: {}", e))?;
+
     let ip = local_addr.ip();
-    
-    // Se l'IP è loopback o 0.0.0.0, proviamo metodi alternativi
+
+    // If the IP is loopback or 0.0.0.0, try alternative methods
     if ip.is_loopback() || ip.is_unspecified() {
-        // Tentativi multipli con timeout
+        // Multiple attempts with timeout
         let endpoints = ["8.8.8.8:80", "1.1.1.1:80", "9.9.9.9:80"];
         let mut detected_ip = None;
-        
+
         for endpoint in endpoints {
-            // Crea un socket UDP con timeout
+            // Create a UDP socket with timeout
             if let Ok(socket) = std::net::UdpSocket::bind("0.0.0.0:0") {
                 if let Ok(()) = socket.set_read_timeout(Some(Duration::from_millis(500))) {
                     if let Ok(()) = socket.connect(endpoint) {
@@ -66,15 +66,15 @@ pub fn get_local_ip() -> Result<NetworkInfo, String> {
             });
         }
 
-        // Fallback finale a localhost
-        log::warn!("Nessun IP di rete rilevato, fallback a 127.0.0.1");
+        // Final fallback to localhost
+        log::warn!("No network IP detected, falling back to 127.0.0.1");
         return Ok(NetworkInfo {
             ip: "127.0.0.1".to_string(),
             port: crate::server::DEFAULT_HTTP_PORT,
         });
     }
-    
-    // IP già valido
+
+    // IP already valid
     Ok(NetworkInfo {
         ip: ip.to_string(),
         port: crate::server::DEFAULT_HTTP_PORT,

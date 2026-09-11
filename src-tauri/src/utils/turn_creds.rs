@@ -41,7 +41,7 @@ type HmacSha1 = Hmac<Sha1>;
 pub const DEFAULT_CRED_TTL_SECS: u64 = 7200; // 2 hours
 
 /// Fallback STUN servers used when STUN_URLS is not configured.
-/// Ordered by regional relevance: Cina/Russia first, then Google/Cloudflare as global fallback.
+/// Ordered by regional relevance: China/Russia first, then Google/Cloudflare as global fallback.
 /// WebRTC ICE tries each server in order and uses the first that responds.
 pub const DEFAULT_STUN_URLS: &str =
     "stun:stun.miwifi.com:3478,stun:stun.chat.bilibili.com:3478,stun:stun.rtc.yandex.net:3478,stun:stun.l.google.com:19302,stun:stun.cloudflare.com:3478,stun:stun1.l.google.com:19302";

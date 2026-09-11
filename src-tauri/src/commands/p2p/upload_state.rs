@@ -40,7 +40,7 @@ impl UploadState {
 
         let file = tokio::fs::File::create(&temp_path)
             .await
-            .map_err(|e| format!("Impossibile creare file temporaneo: {}", e))?;
+            .map_err(|e| format!("Failed to create temp file: {}", e))?;
 
         Ok(Self {
             file,

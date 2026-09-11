@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-/* Reset e base */
+/* Reset and base */
 * {
     box-sizing: border-box;
     margin: 0;
@@ -38,7 +38,7 @@
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    /* Sfondo dark con gradiente + bagliore ciano centrale */
+    /* Dark background with gradient + central cyan glow */
     background:
         radial-gradient(circle at 50% 35%, rgba(34, 211, 238, 0.12), transparent 55%),
         linear-gradient(160deg, var(--bg-0) 0%, var(--bg-1) 100%);
@@ -50,7 +50,7 @@ body {
     overflow: hidden;
 }
 
-/* Grana digitale (noise SVG overlay) */
+/* Digital grain (noise SVG overlay) */
 .noise-overlay {
     position: fixed;
     inset: 0;
@@ -60,7 +60,7 @@ body {
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
-/* Layout principale */
+/* Main layout */
 .app-layout {
     display: grid;
     grid-template-rows: 60px 1fr auto auto;
@@ -206,7 +206,7 @@ body {
     transform: translateX(-50%) translateY(0);
 }
 
-/* Sezioni del tooltip */
+/* Tooltip sections */
 .tooltip-section {
     margin-top: 12px;
     padding-top: 12px;
@@ -538,7 +538,7 @@ body {
     box-shadow: 0 0 8px rgba(56, 189, 248, 0.5);
 }
 
-/* Animazione indeterminata durante l'upload */
+/* Indeterminate animation during upload */
 .progress-fill.indeterminate {
     width: 35% !important;
     animation: indeterminate 1.1s infinite ease-in-out;
@@ -865,7 +865,7 @@ body {
     word-break: break-all;
 }
 
-/* Azioni di condivisione */
+/* Sharing actions */
 .sharing-actions {
     display: flex;
     flex-direction: column;
@@ -966,7 +966,7 @@ body {
     word-break: break-all;
 }
 
-/* Download list (multipli) - estesa fino in fondo */
+/* Download list (multiple) - extends to the bottom */
 .download-list {
     display: flex;
     flex-direction: column;
@@ -987,7 +987,7 @@ body {
     font-size: 0.9rem;
 }
 
-/* Upload list (multipli) - estesa fino in fondo */
+/* Upload list (multiple) - extends to the bottom */
 .upload-list {
     margin-top: 10px;
     display: flex;
@@ -998,7 +998,7 @@ body {
     overflow-y: auto;
 }
 
-/* Upload item (multipli) - speculare a .download-item */
+/* Upload item (multiple) - mirrors .download-item */
 .upload-item {
     padding: 8px 10px;
     background-color: rgba(7, 11, 20, 0.5);
@@ -1336,7 +1336,7 @@ body {
     flex-shrink: 0;
     cursor: help;
     position: relative;
-    visibility: hidden; /* invisibile durante la negoziazione ICE */
+    visibility: hidden; /* invisible during ICE negotiation */
 }
 .conn-badge.direct {
     background: var(--green);
@@ -1354,8 +1354,8 @@ body {
     box-shadow: 0 0 6px rgba(239, 68, 68, 0.6);
 }
 
-/* Tooltip GLOBALE dei LED (position:fixed sul body: non viene tagliato
-   dall'overflow dei pannelli con scroll; posizionato via JS in app.ts) */
+/* GLOBAL LED tooltip (position:fixed on body: not clipped by overflow
+   of scroll panels; positioned via JS in app.ts) */
 .conn-tooltip {
     position: fixed;
     max-width: 280px;

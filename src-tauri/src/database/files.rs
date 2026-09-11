@@ -17,21 +17,21 @@ use crate::FileInfo;
 use rusqlite::{params, OptionalExtension, Connection};
 use std::sync::Arc;
 
-/// Repository per la gestione dei file nel database
+/// File repository for managing files in the database
 pub struct FileRepository {
     conn: Arc<tokio::sync::Mutex<Connection>>,
 }
 
 impl FileRepository {
-    /// Crea un nuovo repository
+    /// Creates a new repository
     pub fn new(conn: Arc<tokio::sync::Mutex<Connection>>) -> Self {
         Self { conn }
     }
-    
+
     /// Initialize the table if it does not exist
     pub async fn init_table(&self) -> Result<(), String> {
         let conn = self.conn.clone();
-        
+
         tokio::task::spawn_blocking(move || {
             let db = conn.blocking_lock();
             db.execute(
@@ -49,13 +49,13 @@ impl FileRepository {
         .await
         .map_err(|e| e.to_string())?
     }
-    
-    /// Salva un file nell'indice
-    /// Usa spawn_blocking per non bloccare l'async runtime
+
+    /// Saves a file to the index
+    /// Uses spawn_blocking to avoid blocking the async runtime
     pub async fn save(&self, file_info: &FileInfo) -> Result<(), String> {
         let file_info = file_info.clone();
         let conn = self.conn.clone();
-        
+
         tokio::task::spawn_blocking(move || {
             let db = conn.blocking_lock();
             db.execute(
@@ -68,12 +68,12 @@ impl FileRepository {
         .await
         .map_err(|e| e.to_string())?
     }
-    
-    /// Carica tutti i file dall'indice
-    /// Usa spawn_blocking per non bloccare l'async runtime
+
+    /// Loads all files from the index
+    /// Uses spawn_blocking to avoid blocking the async runtime
     pub async fn load_all(&self) -> Result<Vec<FileInfo>, String> {
         let conn = self.conn.clone();
-        
+
         tokio::task::spawn_blocking(move || {
             let db = conn.blocking_lock();
             let mut stmt = db
@@ -98,14 +98,14 @@ impl FileRepository {
         .await
         .map_err(|e| e.to_string())?
     }
-    
-    /// Trova un file per hash
-    /// Usa spawn_blocking per non bloccare l'async runtime
+
+    /// Finds a file by hash
+    /// Uses spawn_blocking to avoid blocking the async runtime
     #[allow(dead_code)]
     pub async fn find_by_hash(&self, hash: &str) -> Result<Option<FileInfo>, String> {
         let conn = self.conn.clone();
         let hash = hash.to_string();
-        
+
         tokio::task::spawn_blocking(move || {
             let db = conn.blocking_lock();
             let mut stmt = db
@@ -129,14 +129,14 @@ impl FileRepository {
         .await
         .map_err(|e| e.to_string())?
     }
-    
-    /// Rimuovi un file dall'indice
-    /// Usa spawn_blocking per non bloccare l'async runtime
+
+    /// Removes a file from the index
+    /// Uses spawn_blocking to avoid blocking the async runtime
     #[allow(dead_code)]
     pub async fn remove(&self, hash: &str) -> Result<(), String> {
         let conn = self.conn.clone();
         let hash = hash.to_string();
-        
+
         tokio::task::spawn_blocking(move || {
             let db = conn.blocking_lock();
             db.execute("DELETE FROM files WHERE hash = ?1", [hash])
@@ -146,13 +146,13 @@ impl FileRepository {
         .await
         .map_err(|e| e.to_string())?
     }
-    
-    /// Conta il numero di file nell'indice
-    /// Usa spawn_blocking per non bloccare l'async runtime
+
+    /// Counts the number of files in the index
+    /// Uses spawn_blocking to avoid blocking the async runtime
     #[allow(dead_code)]
     pub async fn count(&self) -> Result<usize, String> {
         let conn = self.conn.clone();
-        
+
         tokio::task::spawn_blocking(move || {
             let db = conn.blocking_lock();
             let count: usize = db
@@ -163,17 +163,17 @@ impl FileRepository {
         .await
         .map_err(|e| e.to_string())?
     }
-    
-    /// Scansiona la cartella shared-folder e aggiunge i file mancanti al database
-    /// Ottimizzato: verifica per nome file prima di calcolare l'hash SHA-256
+
+    /// Scans the shared-folder and adds missing files to the database
+    /// Optimized: checks by file name before computing SHA-256 hash
     pub async fn scan_and_populate(&self, shared_folder: &str) -> Result<usize, String> {
         let conn = self.conn.clone();
         let shared_folder = shared_folder.to_string();
-        
+
         tokio::task::spawn_blocking(move || {
             let db = conn.blocking_lock();
-            
-            // Read all existing filenames from the database
+
+            // Read all existing file names from the database
             let existing_filenames: std::collections::HashSet<String> = {
                 let mut stmt = db
                     .prepare("SELECT filename FROM files")
@@ -187,8 +187,8 @@ impl FileRepository {
                     .collect();
                 filenames
             };
-            
-            // Scansiona la cartella
+
+            // Scan the folder
             let mut added = 0;
             if let Ok(entries) = std::fs::read_dir(&shared_folder) {
                 for entry in entries.flatten() {
@@ -198,18 +198,18 @@ impl FileRepository {
                             .and_then(|n| n.to_str())
                             .unwrap_or("unknown")
                             .to_string();
-                        
+
                         // Skip dotfiles (e.g., .tmp files, .DS_Store)
                         if filename.starts_with('.') {
                             continue;
                         }
-                        
-                        // Se il file è già nel database, salta il calcolo dell'hash
+
+                        // If the file is already in the database, skip hash computation
                         if existing_filenames.contains(&filename) {
                             continue;
                         }
-                        
-                        // Calcola SHA-256 solo per i nuovi file
+
+                        // Compute SHA-256 only for new files
                         let hash = {
                             use sha2::{Digest, Sha256};
                             let mut hasher = Sha256::new();
@@ -226,8 +226,8 @@ impl FileRepository {
                             }
                             hex::encode(hasher.finalize())
                         };
-                        
-                        // Aggiungi al database
+
+                        // Add to database
                         if let Ok(metadata) = std::fs::metadata(&path) {
                             let uploaded_at = chrono::Utc::now().to_rfc3339();
                             db.execute(
@@ -240,7 +240,7 @@ impl FileRepository {
                     }
                 }
             }
-            
+
             Ok(added)
         })
         .await

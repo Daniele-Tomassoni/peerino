@@ -44,10 +44,10 @@ use tower_http::cors::{Any, CorsLayer};
 use tower_http::timeout::TimeoutLayer;
 use tauri::Emitter;
 
-/// Porta HTTP predefinita per il server
+/// Default HTTP port for the server
 pub const DEFAULT_HTTP_PORT: u16 = 3000;
 
-/// Stato condiviso per il server HTTP
+/// Shared state for the HTTP server
 #[allow(dead_code)]
 pub struct HttpServerState {
     pub shared_folder: String,
@@ -175,8 +175,8 @@ where
 }
 
 
-/// Handler per elencare tutti i file disponibili (per test e Cloudflare Tunnel)
-/// Scansiona sempre la shared-folder per rilevare nuovi file
+/// Handler that lists all available files (for testing and Cloudflare Tunnel)
+/// Always scans the shared-folder to detect new files
 async fn list_files_handler(
     State(state): State<Arc<HttpServerState>>,
 ) -> Result<Response, (StatusCode, String)> {
@@ -229,7 +229,7 @@ async fn relay_download_handler(
     stream_file_response(&state, file_hash, "relay").await
 }
 
-/// Handler per il download di un file
+/// Handler for downloading a file
 async fn download_file_handler(
     Path(hash): Path<String>,
     State(state): State<Arc<HttpServerState>>,
@@ -245,7 +245,7 @@ async fn stream_file_response(
     hash: String,
     peer_ip: &str,
 ) -> Result<Response, (StatusCode, String)> {
-    // Trova il file nell'indice
+    // Find the file in the index
     let file_info = {
         let file_index = state.file_index.lock().await;
         file_index
@@ -254,20 +254,20 @@ async fn stream_file_response(
             .ok_or((StatusCode::NOT_FOUND, "File not found".to_string()))?
     };
 
-    // Verifica che il filename sia sicuro (no path traversal)
+    // Verify the filename is safe (no path traversal)
     if !is_safe_filename(&file_info.filename) {
-        return Err((StatusCode::BAD_REQUEST, "Nome file non valido".to_string()));
+        return Err((StatusCode::BAD_REQUEST, "Invalid file name".to_string()));
     }
 
-    // Costruisci il percorso del file
+    // Build the file path
     let file_path = PathBuf::from(&state.shared_folder).join(&file_info.filename);
 
-    // Verifica che il file esista
+    // Verify the file exists
     if !file_path.exists() {
         return Err((StatusCode::NOT_FOUND, "File not found on disk".to_string()));
     }
 
-    // Apri il file
+    // Open the file
     let file = match File::open(&file_path).await {
         Ok(f) => f,
         Err(e) => return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
@@ -276,7 +276,7 @@ async fn stream_file_response(
     // Register cancellation flag for this download
     let cancelled_flag = state.download_tracker.register_cancellation_flag(&hash).await;
 
-    // Usa ReaderStream per lo streaming con tracciamento progresso
+    // Use ReaderStream for streaming with progress tracking
     // Note: ReaderStream uses default 8KB buffer; for 64KB we would need to wrap with a custom buffer
     let stream = ReaderStream::new(file);
     let body = Body::from_stream(ProgressTrackingStream::new(
@@ -290,7 +290,7 @@ async fn stream_file_response(
         cancelled_flag,
     ));
 
-    // Costruisci la risposta
+    // Build the response
     let mut response_headers = axum::http::HeaderMap::new();
     response_headers.insert(
         header::CONTENT_TYPE,
@@ -339,15 +339,15 @@ async fn inbox_upload_handler(
         .filter(|f| is_safe_filename(f))
         .ok_or((StatusCode::BAD_REQUEST, "Missing or invalid filename".to_string()))?;
 
-    // Estrae l'hash del file dalla query string (passato dal frontend).
-    // Viene usato come chiave per il flag di cancellazione, in modo che il
-    // pulsante "X" del frontend (che chiama cancel_upload con solo l'hash)
-    // possa trovare e attivare il flag.
-    // FIX #1: usare SEMPRE `inbox-{inbox_id}` come fallback (NON `inbox-{filename}`)
-    // per garantire che la chiave di cancellazione corrisponda a quella usata
-    // dal pulsante ✕ del frontend quando msg.hash non è disponibile.
-    // Lato frontend la chiave è msg.hash || downloadId dove downloadId = msg.hash
-    // || `${conn.peer}-${msg.filename}`. Per coerenza usiamo un prefisso deterministico.
+    // Extract the file hash from the query string (passed by the frontend).
+    // It is used as the key for the cancellation flag, so that the
+    // "X" button on the frontend (which calls cancel_upload with only the hash)
+    // can find and activate the flag.
+    // FIX #1: always use `inbox-{inbox_id}` as fallback (NOT `inbox-{filename}`)
+    // to ensure the cancellation key matches the one used by the
+    // ✕ button on the frontend when msg.hash is not available.
+    // On the frontend the key is msg.hash || downloadId where downloadId = msg.hash
+    // || `${conn.peer}-${msg.filename}`. For consistency we use a deterministic prefix.
     let file_hash = params
         .get("hash")
         .cloned()
@@ -376,13 +376,13 @@ async fn inbox_upload_handler(
     let mut hasher = Sha256::new();
     let mut total_size: u64 = 0;
     
-    // cosi il pulsante "X" del frontend (che chiama cancel_upload con solo
-    // l'hash) puo trovare e attivare il flag di cancellazione.
+    // so the frontend "X" button (which calls cancel_upload with only
+    // the hash) can find and activate the cancellation flag.
     let download_hash = file_hash.clone();
     let start_time = Instant::now();
 
-    // Content-Length inviato dal browser (XHR con File): permette di mostrare
-    // una percentuale reale invece di progresso indeterminato.
+    // Content-Length sent by the browser (XHR with File): allows showing
+    // a real percentage instead of indeterminate progress.
     let total_expected: u64 = headers
         .get(header::CONTENT_LENGTH)
         .and_then(|v| v.to_str().ok())
@@ -423,8 +423,8 @@ async fn inbox_upload_handler(
             &filename,
         ).await;
 
-        // Emit Tauri event for real-time download progress (percentuale reale
-        // grazie a Content-Length; 0% indeterminato solo se l'header manca)
+        // Emit Tauri event for real-time download progress (real percentage
+        // thanks to Content-Length; 0% indeterminate only if the header is missing)
         if let Some(ref handle) = state.app_handle {
             let pct = if total_expected > 0 {
                 ((total_size.min(total_expected) as f64 / total_expected as f64) * 100.0) as u32
@@ -465,23 +465,23 @@ async fn inbox_upload_handler(
     let unverified_http = file_hash.is_empty();
     if !unverified_http && hash != file_hash {
         log::error!(
-            "❌ HASH MISMATCH (inbox HTTP): expected={}, actual={}. File NON salvato.",
+            "❌ HASH MISMATCH (inbox HTTP): expected={}, actual={}. File NOT saved.",
             file_hash, hash
         );
         drop(target_file);
         if let Err(e) = tokio::fs::remove_file(&target_path).await {
-            log::warn!("Impossibile cancellare file inbox dopo hash mismatch: {}", e);
+            log::warn!("Unable to delete inbox file after hash mismatch: {}", e);
         }
         return Err((StatusCode::BAD_REQUEST, format!(
-            "Hash mismatch: il file ricevuto non corrisponde all'hash dichiarato ({} vs {}). NON salvato.",
+            "Hash mismatch: the received file does not match the declared hash ({} vs {}). NOT saved.",
             file_hash, hash
         )));
     }
     if unverified_http {
-        log::warn!("⚠️ Inbox HTTP UNVERIFIED: expected_hash vuoto, hash non verificato.");
+        log::warn!("⚠️ Inbox HTTP UNVERIFIED: expected_hash empty, hash not verified.");
     }
 
-    // Registra nel file_index (in memoria, visibile nella UI) e nel database (persistenza)
+    // Register in the file_index (in memory, visible in the UI) and in the database (persistence)
     let file_info = FileInfo {
         filename: final_filename.clone(),
         size: total_size,
@@ -495,13 +495,13 @@ async fn inbox_upload_handler(
         tauri::async_runtime::spawn(async move {
             let repo = FileRepository::new(db);
             if let Err(e) = repo.save(&file_info).await {
-                log::error!("Errore salvataggio database inbox: {}", e);
+                log::error!("Database save error for inbox: {}", e);
             }
         });
     }
 
-    // Emetti l'evento finale al 100%: senza questo la UI non conclude mai
-    // la riga di download e il file ricevuto non risulta "completato".
+    // Emit the final event at 100%: without this the UI never concludes
+    // the download row and the received file does not appear "completed".
     if let Some(ref handle) = state.app_handle {
         let _ = handle.emit("download-progress", crate::commands::download_progress::DownloadProgress {
             hash: download_hash.clone(),
@@ -533,26 +533,26 @@ async fn inbox_upload_handler(
         download_tracker.remove_download(&download_hash_clone).await;
     });
 
-    log::info!("File ricevuto via inbox locale: {} (hash: {})", final_filename, hash);
+    log::info!("File received via local inbox: {} (hash: {})", final_filename, hash);
     Ok(Json(json!({"status": "ok", "hash": hash, "filename": final_filename})).into_response())
 }
 
-/// Crea il router per il server HTTP
+/// Creates the HTTP server router
 pub fn create_router(state: Arc<HttpServerState>) -> Router {
     Router::new()
         .route("/files", get(list_files_handler))
         .route("/get/:link_id", get(relay_download_handler))
         .route("/download/:hash", get(download_file_handler))
         .route("/inbox/:inbox_id", get(inbox_page_handler).post(inbox_upload_handler))
-        // Probe di raggiungibilità LAN: usata dalla pagina receiver per capire
-        // se il ricevente è sulla stessa rete del mittente (fallback HTTP diretto)
+        // LAN reachability probe: used by the receiver page to determine
+        // if the recipient is on the same network as the sender (direct HTTP fallback)
         .route("/ping", get(ping_handler))
         // Receiver web page for P2P-to-Web (Generate Web Link / Reverse Box)
         // Served at root "/" to work with Netlify
         .route("/", get(receiver_page_handler))
         .route("/receiver", get(receiver_page_handler))
-        // Timeout per connessioni lente (5 minuti)
-        // CORS per accesso da altri dispositivi
+        // Timeout for slow connections (5 minutes)
+        // CORS for access from other devices
         .layer(TimeoutLayer::new(Duration::from_secs(300)))
         .layer(CorsLayer::new().allow_origin(Any))
         .with_state(state)
@@ -801,10 +801,10 @@ async fn inbox_page_handler(
 
 /// Starts the HTTP server with an already-bound listener.
 /// Binding is done by the caller (start_http_server) so that bind errors
-/// di bind vengano restituiti sincronamente invece di essere nascosti nel task.
+/// are returned synchronously instead of being hidden inside the task.
 pub async fn start_server(state: Arc<HttpServerState>, listener: tokio::net::TcpListener) -> Result<(), String> {
     let addr = listener.local_addr()
-        .map_err(|e| format!("Failed to read l'indirizzo del listener: {}", e))?;
+        .map_err(|e| format!("Failed to read the listener address: {}", e))?;
     
     log::info!("🌐 HTTP server started at http://{}", addr);
     

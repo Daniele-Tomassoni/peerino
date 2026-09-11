@@ -13,20 +13,20 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
-/// Apre un URL nel browser predefinito
+/// Opens a URL in the default browser
 #[tauri::command]
 pub async fn open_url(url: String) -> Result<(), String> {
     tauri::async_runtime::spawn(async move {
-        // Apri l'URL nel browser
+        // Open the URL in the browser
         if let Err(e) = open::that(&url) {
-            log::error!("Errore apertura URL: {}", e);
+            log::error!("Error opening URL: {}", e);
         }
     });
-    
+
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    // I test verranno eseguiti con integrazione
+    // Tests will be run with integration
 }

@@ -19,10 +19,10 @@ pub mod peer_id;
 pub mod turn_creds;
 pub mod ice_provider;
 
-/// Verifica che un filename sia sicuro (no path traversal).
-/// Rifiuta nomi vuoti o contenenti `..`, `/` o `\`.
-/// Condiviso tra i vari handler per evitare duplicazioni e mantenere
-/// coerente la validazione dei nomi file in tutto il backend.
+/// Verifies that a filename is safe (no path traversal).
+/// Rejects empty names or those containing `..`, `/` or `\`.
+/// Shared among various handlers to avoid duplication and maintain
+/// consistent file name validation across the entire backend.
 pub fn is_safe_filename(filename: &str) -> bool {
     !filename.is_empty()
         && !filename.contains("..")
@@ -30,7 +30,7 @@ pub fn is_safe_filename(filename: &str) -> bool {
         && !filename.contains('\\')
 }
 
-/// Restituisce la directory in cui si trova l'eseguibile dell'app.
+/// Returns the directory where the app executable is located.
 /// This guarantees that the `shared-folder`, `temp`, and `config` folders
 /// are created in the same directory as `peerino.exe`, regardless
 /// of the current working directory.

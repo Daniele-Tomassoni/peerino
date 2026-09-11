@@ -40,7 +40,7 @@ pub struct DownloadTracker {
     pub cancellations_total: Arc<std::sync::atomic::AtomicU64>,
 }
 
-/// FIX: telemetria globale download counters (snapshot via `get_metrics`)
+/// FIX: telemetry — global download counters (snapshot via `get_metrics`)
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct DownloadMetrics {
     pub cancellations_total: u64,
@@ -64,8 +64,8 @@ impl DownloadTracker {
             active_downloads: active.len(),
         }
     }
-    
-    /// Aggiorna il progresso di un download
+
+    /// Updates the progress of a download
     pub async fn update_progress(
         &self,
         hash: &str,
@@ -98,15 +98,15 @@ impl DownloadTracker {
             cancelled: false,
         });
     }
-    
-    /// Rimuovi un download completato
+
+    /// Removes a completed download
     pub async fn remove_download(&self, hash: &str) {
         let mut active = self.active.lock().await;
         active.remove(hash);
         let mut flags = self.cancelled_flags.lock().await;
         flags.remove(hash);
     }
-    
+
     /// Cancel an in-progress download
     pub async fn cancel_download(&self, hash: &str) {
         // FIX: telemetry — increment counter only if the download existed
@@ -136,13 +136,13 @@ impl DownloadTracker {
                 self.cancellations_total.load(Ordering::Relaxed), hash);
         }
     }
-    
+
     /// Get all active downloads
     pub async fn get_all(&self) -> Vec<DownloadProgress> {
         let active = self.active.lock().await;
         active.values().cloned().collect()
     }
-    
+
     /// Register a cancellation flag for a download
     /// FIX #3: reuse the existing flag for the same hash if it is NOT already
     /// cancelled, avoiding the clobbering that caused a race condition between
@@ -161,7 +161,7 @@ impl DownloadTracker {
         flags.insert(hash.to_string(), flag.clone());
         flag
     }
-    
+
     /// Check if a download has been cancelled
     /// FIX #5: use try_lock to avoid blocking the async runtime on every chunk.
     /// If the lock is contended, return false (assume not cancelled): the loop

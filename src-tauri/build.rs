@@ -1,10 +1,11 @@
 fn main() {
-    // Disabilita la generazione delle risorse Windows se l'icona non esiste
+    // Disables Windows resource generation if the icon does not exist
     #[cfg(windows)]
     {
-        // Non generare risorse Windows
-        println!("cargo:rustc-env=TAURI_ICON_PATH=");
+        let icon_path = std::path::Path::new("src-tauri/icons/icon.ico");
+        if !icon_path.exists() {
+            // Don't run the windows-resource build script if the icon is missing
+            println!("cargo:rustc-cfg=skip_windows_resources");
+        }
     }
-    
-    tauri_build::build();
 }

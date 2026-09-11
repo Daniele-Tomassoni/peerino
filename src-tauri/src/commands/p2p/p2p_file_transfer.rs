@@ -55,7 +55,7 @@ pub async fn read_file_chunk(
     // Check cancellation flag before reading the next chunk.
     // The frontend cancel button calls cancel_upload({ hash }) which sets
     // this flag; we abort the transfer here instead of streaming forever.
-    // FIX #5: is_cancelled è ora sincrono (try_lock) — non serve .await
+    // FIX #5: is_cancelled is now synchronous (try_lock) — no .await needed
     if state.upload_tracker.is_cancelled(&hash) {
         log::info!("P2P upload cancelled by user: {}", hash);
         return Err("Upload cancelled".to_string());

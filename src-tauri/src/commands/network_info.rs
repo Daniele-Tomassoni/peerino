@@ -15,12 +15,12 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 use crate::utils::network::NetworkInfo;
 
-/// Rileva le informazioni di rete
-/// - Rileva l'IP locale (IPv4, non loopback)
-/// - Restituisce { ip: String, port: u16 }
-/// - Usa TcpListener per trovare un IP valido
-/// - Se non trova un IP, restituisce "127.0.0.1" come fallback
-/// - La porta è sempre 3000 (fissa)
+/// Detects network information
+/// - Detects the local IP (IPv4, non-loopback)
+/// - Returns { ip: String, port: u16 }
+/// - Uses TcpListener to find a valid IP
+/// - If no IP is found, returns "127.0.0.1" as fallback
+/// - The port is always 3000 (fixed)
 #[tauri::command]
 pub async fn get_network_info() -> Result<NetworkInfo, String> {
     crate::utils::network::get_local_ip()
@@ -35,17 +35,17 @@ mod tests {
         let result = get_network_info().await;
         assert!(result.is_ok());
         let info = result.unwrap();
-        
-        // Verifica IP non vuoto
+
+        // Verify non-empty IP
         assert!(!info.ip.is_empty());
-        
-        // Verifica formato IP valido (IPv4 con punti o IPv6 localhost)
-        let is_valid_ip = info.ip.contains('.') 
-            || info.ip == "::1" 
+
+        // Verify valid IP format (IPv4 with dots or IPv6 localhost)
+        let is_valid_ip = info.ip.contains('.')
+            || info.ip == "::1"
             || info.ip == "127.0.0.1";
-        assert!(is_valid_ip, "IP non valido: {}", info.ip);
-        
-        // Verifica porta valida (solo controllo di base)
-        assert!(info.port > 0, "Porta non valida: {}", info.port);
+        assert!(is_valid_ip, "Invalid IP: {}", info.ip);
+
+        // Verify valid port (basic check only)
+        assert!(info.port > 0, "Invalid port: {}", info.port);
     }
 }

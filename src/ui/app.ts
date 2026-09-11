@@ -469,7 +469,7 @@ function renderUploadProgressList(): void {
                     <span class="conn-badge" data-tooltip="${TOOLTIP_DIRECT}"></span>
                     <span class="download-filename"></span>
                     <span class="download-percentage"></span>
-                    <button class="cancel-btn" title="Annulla upload">✕</button>
+                    <button class="cancel-btn" title="Cancel upload">✕</button>
                 </div>
                 <div class="progress-bar">
                     <div class="progress-fill"></div>
@@ -585,7 +585,7 @@ function updateDownloadProgress(downloads: DownloadProgress[]): void {
                     <span class="conn-badge" data-tooltip="${TOOLTIP_DIRECT}"></span>
                     <span class="download-filename"></span>
                     <span class="download-percentage"></span>
-                    <button class="cancel-btn" title="Annulla download">✕</button>
+                    <button class="cancel-btn" title="Cancel download">✕</button>
                 </div>
                 <div class="progress-bar">
                     <div class="progress-fill"></div>
@@ -612,7 +612,7 @@ function updateDownloadProgress(downloads: DownloadProgress[]): void {
         if (detailEls[0]) detailEls[0].textContent = `${formatSize(d.downloaded_bytes)} / ${formatSize(d.total_bytes)}`;
         if (detailEls[1]) detailEls[1].textContent = `${d.speed_mbps.toFixed(1)} MB/s • ${eta}s`;
 
-        // LED connessione (verde = diretto, giallo = TURN, rosso = sopra limite)
+        // Connection LED (green = direct, yellow = TURN, red = over limit)
         // FIX: pass d.total_bytes so the red badge also appears on the RECEIVER's
         // download progress bar when the file exceeds the TURN size limit.
         applyConnBadge(row.querySelector<HTMLElement>('.conn-badge'), d.hash, d.total_bytes);
@@ -1219,7 +1219,7 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
             cancelled: false
         });
         renderUploadProgressList();
-        // Aggiorna il badge a rosso (overlimit)
+        // Update the badge to red (overlimit)
         const badge = uploadProgressListRight?.querySelector<HTMLElement>('[data-upload-id="' + CSS.escape(uploadKey) + '"] .conn-badge');
         if (badge) {
             badge.className = 'conn-badge turn-overlimit';
@@ -1239,12 +1239,12 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
         }
         return;
     }
-    // Path rilevato come 'direct': imposta il badge verde
+    // Path detected as 'direct': set the green badge
     if (detectedPath === 'direct') {
         connectionPaths.set(uploadKey, 'direct');
         renderUploadProgressList();
     }
-    // detectedPath === 'turn' ma file <= limite: imposta badge giallo
+    // detectedPath === 'turn' but file <= limit: set yellow badge
     if (detectedPath === 'turn' && fileInfo.size <= turnMaxSize) {
         connectionPaths.set(uploadKey, 'turn');
         renderUploadProgressList();
@@ -1451,7 +1451,7 @@ function handleIncomingConnection(conn: DataConnection): void {
                     activeUploads.delete(key);
                 }
             }
-            // Rimuovi le informazioni di percorso connessione di questo peer
+            // Remove the connection path information for this peer
             for (const key of connectionPaths.keys()) {
                 if (key.startsWith(conn.peer + '-')) {
                     connectionPaths.delete(key);
@@ -1468,10 +1468,10 @@ function handleIncomingConnection(conn: DataConnection): void {
 // binary chunks are processed. Prevents hash mismatch from premature finalize.
 async function finalizeIncomingUpload(conn: DataConnection, upload: IncomingUpload): Promise<void> {
     // Remove from active downloads
-    // FIX P0: usare la STESSA logica di riga 1376 (msg.hash ha priorità
-    // su peer-filename) per garantire che set/delete operino sulla stessa
-    // entry. Senza questo, la entry creata a riga 1376 con chiave msg.hash
-    // resta orfana e appare come barra download ferma a 0%.
+    // FIX P0: use the SAME logic as line 1376 (msg.hash has priority
+    // over peer-filename) to ensure set/delete operate on the same
+    // entry. Without this, the entry created at line 1376 with key msg.hash
+    // remains orphaned and appears as a download bar stuck at 0%.
     const downloadId = upload.expectedHash || `${conn.peer}-${upload.filename}`;
     activeDownloads.delete(downloadId);
     updateDownloadProgress(Array.from(activeDownloads.values()));
@@ -1555,11 +1555,11 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                 log('📥 Upload request from browser: ' + msg.filename + ' (peerId: ' + maskPeerId(conn.peer) + ')');
                 console.log('Full peerId (debug):', conn.peer);
 
-                // TURN size limit (Fase 2): blocca upload browser>app oltre TURN_MAX_FILE_SIZE.
+                // TURN size limit (Phase 2): blocks browser>app uploads exceeding TURN_MAX_FILE_SIZE.
                 // FIX: show the download bar IMMEDIATELY (before detectConnectionPath)
                 // so the user gets instant feedback instead of waiting 1-2s for ICE stats.
                 // The badge is updated asynchronously when the path is detected.
-                // FIX BASSO #11: usa la cache __turnMaxFileSize invece di chiamare l'IPC.
+                // FIX LOW #11: use the __turnMaxFileSize cache instead of calling IPC.
                 const turnMaxSize2 = (window as any).__turnMaxFileSize || 100 * 1024 * 1024;
                 // Fallback: if the cache is not ready yet, load it once
                 if (!(window as any).__turnMaxFileSize) {
@@ -1659,10 +1659,10 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                 incomingUploads.set(conn.peer, upload);
 
                 // Call init_incoming_upload to create temp file.
-                // FIX CRITICO #3: passare il percorso ICE rilevato (detectedPath2)
-                // al backend, che lo usa per applicare il limite TURN lato server
-                // (difesa in profondità). Senza questo, il path è sempre None e il
-                // controllo in init_incoming_upload.rs:29 non si attiva mai.
+                // FIX CRITICAL #3: pass the detected ICE path (detectedPath2)
+                // to the backend, which uses it to apply the TURN limit server-side
+                // (defense in depth). Without this, the path is always None and the
+                // check in init_incoming_upload.rs:29 never activates.
                 try {
                     log('📌 init_incoming_upload with peerId: ' + maskPeerId(conn.peer));
                     console.log('Full peerId (debug):', conn.peer);
@@ -1762,7 +1762,7 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                         const elapsedMs = Date.now() - upload.startTime;
                         const speedMbps = elapsedMs > 0 ? (upload.receivedBytes / (1024 * 1024)) / (elapsedMs / 1000) : 0;
                         // Update download progress bar (Reverse Inbox: app is receiving from browser)
-                        // FIX P0: coerenza con riga 1376 (msg.hash prioritario) per evitare entry orfane.
+                        // FIX P0: consistency with line 1376 (msg.hash prioritized) to avoid orphaned entries.
                         const downloadId = upload.expectedHash || `${conn.peer}-${upload.filename}`;
                         activeDownloads.set(downloadId, {
                             hash: upload.expectedHash || downloadId,
@@ -1785,7 +1785,7 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                                                         log('❌ Could not send upload_error to browser: ' + getErrorMessage(e));
                                                     }
                                                     // Remove from active downloads on error
-                                                    // FIX P0: coerenza con riga 1376 (msg.hash prioritario) per evitare entry orfane.
+                                                    // FIX P0: consistency with line 1376 (msg.hash prioritized) to avoid orphaned entries.
                                                     const downloadId = upload.expectedHash || `${conn.peer}-${upload.filename}`;
                                                     activeDownloads.delete(downloadId);
                                                     updateDownloadProgress(Array.from(activeDownloads.values()));
@@ -1805,8 +1805,8 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                                                 startTime: Date.now()
                                             });
                                             // Add to active downloads for progress display
-                                            // FIX #1: usare sempre data.hash come chiave (è il msg.expectedHash
-                                            // del mittente, corrisponde alla chiave di cancellazione backend)
+                                            // FIX #1: always use data.hash as the key (it is the msg.expectedHash
+                                            // from the sender, which matches the backend cancellation key)
                                             activeDownloads.set(data.hash, {
                                                 hash: data.hash,
                                                 filename: data.filename,
@@ -1907,7 +1907,7 @@ function downloadReceivedFile(filename: string, data: Uint8Array): void {
 }
 
 async function connectToPeer(): Promise<void> {
-    // UI di connessione manuale rimossa: la funzione resta solo per compatibilità
+    // Manual connection UI removed: this function remains only for compatibility
     if (!remotePeerIdInput || !connectPeerBtn) return;
     const remotePeerId = remotePeerIdInput.value.trim();
     if (!remotePeerId || !peer) return;
@@ -1940,7 +1940,7 @@ async function connectToPeer(): Promise<void> {
 }
 
 async function disconnectFromPeer(): Promise<void> {
-    // UI di connessione manuale rimossa: la funzione resta solo per compatibilità
+    // Manual connection UI removed: this function remains only for compatibility
     if (!remotePeerIdInput || !connectPeerBtn) return;
     // The Rust command requires a peer_id; we use the remote ID entered
     // or the first connected peer on the frontend side (PeerJS).
@@ -1965,7 +1965,7 @@ function updateConnectionStatus(status: 'connected' | 'disconnected' | 'error' |
 }
 
 async function loadPeers(): Promise<void> {
-    // UI Active Peers removed: the function remains for compatibility but exits immediately
+    // Active Peers UI removed: the function remains for compatibility but exits immediately
     if (!peersListEl) return;
     try {
         const peers = await invoke<PeerInfo[]>('list_peers');
@@ -1993,7 +1993,7 @@ async function generateWebLink(): Promise<void> {
         // Local server active => the link includes the LAN fallback (lan=...)
         await ensureServerRunning();
         // ICE/signaling configuration is entirely env-driven in the backend:
-        // niente credenziali statiche passate dall'frontend.
+        // no static credentials passed from the frontend.
         const link = await invoke<string>('generate_web_link', {
             hash: selectedHash,
         });
@@ -2094,7 +2094,7 @@ async function handleCreateInboxInternet(): Promise<void> {
 // ---------- Event listeners ----------
 uploadBtn.addEventListener('click', handleSelectFile);
 refreshBtn.addEventListener('click', handleRefresh);
-// Pulsante Start Server rimosso dalla UI: avvio automatico via ensureServerRunning()
+// Start Server button removed from UI: auto-start via ensureServerRunning()
 startServerBtn?.addEventListener('click', handleStartServer);
 openFolderBtn.addEventListener('click', handleOpenFolder);
 
@@ -2139,7 +2139,7 @@ copyPeerIdBtn?.addEventListener('click', () => {
     if (currentPeerId) copyToClipboard(currentPeerId, 'ID copied');
 });
 
-// P2P (UI di connessione manuale rimossa: il motore PeerJS gira headless)
+// P2P (manual connection UI removed: PeerJS engine runs headless)
 connectPeerBtn?.addEventListener('click', connectToPeer);
 disconnectPeerBtn?.addEventListener('click', disconnectFromPeer);
 generateWebLinkBtn.addEventListener('click', generateWebLink);
@@ -2264,7 +2264,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         await handleStartServer();
     }
     await initPeer();
-    // Cache TURN limit (Fase 2): blocca file > 100MB su TURN.
+    // Cache TURN limit (Phase 2): blocks files > 100MB on TURN.
     invoke<{ max_file_size: number; max_file_size_buffer: number; rejections_total: number }>('get_turn_limits').then((limits) => { (window as any).__turnMaxFileSize = limits.max_file_size; }).catch(() => { (window as any).__turnMaxFileSize = 100 * 1024 * 1024; });
     // Listen for system resume from hibernation/suspension (emitted by Rust backend)
     listen('system-resumed', () => {
@@ -2274,26 +2274,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     await loadPeers();
     updateContext(currentContext);
 
-    // ===== Pulsante Help (lampeggiante con tooltip) =====
+    // ===== Help button (flashing with tooltip) =====
     const helpBtn = document.querySelector('.help-btn') as HTMLElement | null;
     if (helpBtn) {
-        // Ferma l'animazione del pulse alla prima interazione (hover o click)
+        // Stop the pulse animation on first interaction (hover or click)
         helpBtn.addEventListener('mouseenter', () => {
             helpBtn.classList.add('interacted');
         });
 
-        // Click: toggle tooltip (critico per mobile, dove non esiste l'hover)
+        // Click: toggle tooltip (critical for mobile, where there is no hover)
         helpBtn.addEventListener('click', (e: MouseEvent) => {
             e.stopPropagation();
             helpBtn.classList.toggle('show-tooltip');
         });
 
-        // Chiudi il tooltip se si clicca fuori dal pulsante
+        // Close the tooltip if clicked outside the button
         document.addEventListener('click', () => {
             helpBtn.classList.remove('show-tooltip');
         });
 
-        // Tooltip automatico al primo avvio: mostra le istruzioni per 5 secondi
+        // Automatic tooltip on first start: shows instructions for 5 seconds
         if (!localStorage.getItem('helpSeen')) {
             setTimeout(() => {
                 helpBtn.classList.add('show-tooltip');
@@ -2322,13 +2322,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         
         try {
             if (isDownload) {
-                // FIX #4: chiamare SOLO cancel_download (non più cancel_upload).
-                // cancel_download è sufficiente per:
-                // 1) download_file locale (download_tracker)
-                // 2) stream_file P2P (download_tracker)
+                // FIX #4: call ONLY cancel_download (no more cancel_upload).
+                // cancel_download is sufficient for:
+                // 1) local download_file (download_tracker)
+                // 2) P2P stream_file (download_tracker)
                 // 3) inbox_upload_handler (download_tracker)
                 // 4) ProgressTrackingStream (download_tracker)
-                // La doppia chiamata causava race condition sul mutex active.
+                // The double call caused a race condition on the active mutex.
                 await invoke('cancel_download', { hash: key });
                 console.log(`❌ Download cancelled: ${key}`);
                 // Mark as cancelled in frontend map (for P2P download loops)
@@ -2346,9 +2346,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                     // closed connection even when other active ones exist.
                     const senderPeer = existing.peer_ip;
                     if (senderPeer && senderPeer !== 'inbox') {
-                        // Prima prova la mappa tipizzata `connections`
+                        // Try the typed `connections` map first
                         let conn = connections.get(senderPeer);
-                        // Fallback: cerca in peer.connections (struttura interna PeerJS)
+                        // Fallback: search in peer.connections (internal PeerJS structure)
                         if (!conn && peer && peer.open) {
                             const conns: any[] = (peer as any).connections?.[senderPeer] || [];
                             conn = conns.find((c: any) => c && c.open) || conns[0];
