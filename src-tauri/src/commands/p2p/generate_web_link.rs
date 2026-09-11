@@ -49,8 +49,8 @@ pub async fn generate_web_link(
     let file_info = {
         let file_index = state.file_index.lock().await;
         file_index.get(&hash).cloned()
-            .ok_or_else(|| "File non trovato nell'indice".to_string())?
-    };
+            .ok_or_else(|| "File not found in index".to_string())?
+        };
 
     // 1b. FIX #3: Verify the file actually exists on disk.
     // This prevents generating a link for a file that is in the index
@@ -58,12 +58,12 @@ pub async fn generate_web_link(
     // on the receiver side.
     let file_path = std::path::Path::new(&state.shared_folder).join(&file_info.filename);
     if !file_path.exists() {
-        return Err(format!("File non presente su disco: {}", file_info.filename));
+        return Err(format!("File not present on disk: {}", file_info.filename));
     }
 
     // 2. Get the current PeerID (updated by PeerJS on connect)
     let peer_id = state.peer_id.lock().await.clone()
-        .ok_or_else(|| "PeerID non disponibile. Assicurati che PeerJS sia connesso.".to_string())?;
+        .ok_or_else(|| "PeerID unavailable. Ensure PeerJS is connected.".to_string())?;
 
     // 3. Store the pending file hash for automatic P2P-to-Web transfer
     {

@@ -72,7 +72,7 @@ pub struct AppState {
 }
 
 fn main() {
-    // Inizializza il logging
+    // Initialize logging
     env_logger::init();
 
     // Carica variabili d'ambiente da .env (es. P2P_WEB_URL, TURN_AUTH_SECRET,
@@ -131,8 +131,8 @@ fn main() {
                     db: Arc::new(tokio::sync::Mutex::new(
                         rusqlite::Connection::open_in_memory().unwrap()
                     )),
-                    // Usa percorsi assoluti basati sulla directory dell'eseguibile
-                    // Questo garantisce che le cartelle vengano create accanto a peerino.exe
+                    // Use absolute paths based on the executable directory
+                    // This guarantees that folders are created alongside peerino.exe
                     shared_folder,
                     temp_folder,
                     config_folder,
@@ -255,26 +255,26 @@ fn main() {
                     }
                 }
 
-                // Inizializza la tabella files
+                // Initialize the files table
                 let repo = database::files::FileRepository::new(db.clone());
                 if let Err(e) = repo.init_table().await {
                     log::warn!("⚠️ Could not create files table: {}", e);
                 }
 
-                // Scansiona la shared-folder e aggiunge i file mancanti al database
+                // Scan the shared-folder and add missing files to the database
                 if let Err(e) = repo.scan_and_populate(&shared_folder).await {
                     log::warn!("⚠️ Could not scan shared folder: {}", e);
                 }
-                
-                // Carica i file esistenti dal database nell'indice in memoria
+
+                // Load existing files from the database into the in-memory index
                 let files = repo.load_all().await;
-                
+
                 if let Ok(files) = files {
                     let mut index = file_index.lock().await;
                     for file in files {
                         index.insert(file.hash.clone(), file);
                     }
-                    log::info!("📂 Caricati {} file dall'indice persistente", index.len());
+                    log::info!("📂 Loaded {} files from the persistent index", index.len());
                 }
             });
 
