@@ -1114,11 +1114,6 @@
                 return 'Your network requires a relay server to transfer files.\n\n' +
                        'To share files, please connect to a WiFi network, or ask the sender to do the same.';
             }
-            // Kept for backward compatibility; unused now.
-            var _lang = (navigator.language || 'en').toLowerCase();
-            var _maxSizeMb = Math.round((msg.max_size || TURN_MAX_FILE_SIZE) / 1048576);
-            var _fileSizeMb = Math.round((msg.file_size || 0) / 1048576);
-            void _lang; void _maxSizeMb; void _fileSizeMb;
 
             // ===== UPLOAD VIA WEBRTC (Inbox) =====
             // FIX: accept a hashPromise so we don't block conn.on('open')
