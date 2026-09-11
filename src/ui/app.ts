@@ -1286,7 +1286,7 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
         console.log('[DEBUG upload] P2P send started:', fileInfo.hash, 'totalSize =', totalSize, 'key =', uploadKey);
         renderUploadProgressList();
 
-        // Rileva se questa connessione passa dal relay TURN (aggiorna il LED quando pronto).
+        // Detect whether this connection goes through the TURN relay (updates the LED when ready).
         // FIX: poll ICE stats with retries instead of a single call.
         // A single getStats() right after the connection opens often
         // returns no selected candidate pair yet, so the badge stays
@@ -1315,7 +1315,7 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
             // Check if upload was cancelled
             const uploadEntry = activeUploads.get(uploadKey);
             if (uploadEntry && uploadEntry.cancelled) {
-                log(`❌ Upload annullato: ${fileInfo.filename}`);
+                log(`❌ Upload cancelled: ${fileInfo.filename}`);
                 activeUploads.delete(uploadKey);
                 renderUploadProgressList();
                 activeWebRtcDownloads.delete(fileInfo.hash);
@@ -1563,7 +1563,7 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                 // The badge is updated asynchronously when the path is detected.
                 // FIX BASSO #11: usa la cache __turnMaxFileSize invece di chiamare l'IPC.
                 const turnMaxSize2 = (window as any).__turnMaxFileSize || 100 * 1024 * 1024;
-                // Fallback: se la cache non è ancora pronta, caricala una volta
+                // Fallback: if the cache is not ready yet, load it once
                 if (!(window as any).__turnMaxFileSize) {
                     try {
                         const limits = await invoke<{ max_file_size: number }>('get_turn_limits');
@@ -1820,7 +1820,7 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                                                 cancelled: false
                                             });
                                             updateDownloadProgress(Array.from(activeDownloads.values()));
-                                            // Rileva se questa connessione passa dal relay TURN (LED badge).
+                                            // Detect whether this connection goes through the TURN relay (LED badge).
                                             // FIX: poll ICE stats with retries instead of a single call.
                                             // A single getStats() right after the connection opens often
                                             // returns no selected candidate pair yet, so the badge stays
@@ -1967,7 +1967,7 @@ function updateConnectionStatus(status: 'connected' | 'disconnected' | 'error' |
 }
 
 async function loadPeers(): Promise<void> {
-    // UI Active Peers rimossa: la funzione resta per compatibilità ma esce subito
+    // UI Active Peers removed: the function remains for compatibility but exits immediately
     if (!peersListEl) return;
     try {
         const peers = await invoke<PeerInfo[]>('list_peers');
@@ -1992,9 +1992,9 @@ async function generateWebLink(): Promise<void> {
     generateWebLinkBtn.disabled = true;
     generateWebLinkBtn.textContent = '⏳ Generating...';
     try {
-        // Server locale attivo => il link include il fallback LAN (lan=...)
+        // Local server active => the link includes the LAN fallback (lan=...)
         await ensureServerRunning();
-        // Configurazione ICE/signaling interamente env-driven nel backend:
+        // ICE/signaling configuration is entirely env-driven in the backend:
         // niente credenziali statiche passate dall'frontend.
         const link = await invoke<string>('generate_web_link', {
             hash: selectedHash,
@@ -2060,7 +2060,7 @@ async function handleCreateInboxLocal(): Promise<void> {
     createInboxLocalBtn.disabled = true;
     createInboxLocalBtn.textContent = '⏳ Generating...';
     try {
-        // Inbox locale = HTTP puro (/inbox/{id}): nessun signaling/TURN coinvolto
+        // Local inbox = pure HTTP (/inbox/{id}): no signaling/TURN involved
         const link = await invoke<string>('create_inbox_local');
         if (inboxLocalLinkEl) inboxLocalLinkEl.textContent = link;
         if (inboxLocalLinkContainer) inboxLocalLinkContainer.classList.remove('hidden');
@@ -2078,7 +2078,7 @@ async function handleCreateInboxInternet(): Promise<void> {
     createInboxInternetBtn.disabled = true;
     createInboxInternetBtn.textContent = '⏳ Generating...';
     try {
-        // Server locale attivo => il link include il fallback LAN (lan=...)
+        // Local server active => the link includes the LAN fallback (lan=...)
         await ensureServerRunning();
         const link = await invoke<string>('create_inbox');
         if (inboxInternetLinkEl) inboxInternetLinkEl.textContent = link;
@@ -2332,20 +2332,20 @@ document.addEventListener('DOMContentLoaded', async () => {
                 // 4) ProgressTrackingStream (download_tracker)
                 // La doppia chiamata causava race condition sul mutex active.
                 await invoke('cancel_download', { hash: key });
-                console.log(`❌ Download annullato: ${key}`);
+                console.log(`❌ Download cancelled: ${key}`);
                 // Mark as cancelled in frontend map (for P2P download loops)
                 const existing = activeDownloads.get(key);
                 if (existing) {
                     existing.cancelled = true;
                     activeDownloads.set(key, existing);
-                    // FIX #2: notifica il mittente (via WebRTC) per fermare l'invio chunk.
-                    // Senza questo, il mittente continua a leggere il file e a inviare
-                    // chunk sul data channel fino al termine del loop — sprecando
-                    // banda e CPU.
-                    // FIX: usa la mappa `connections` già tracciata (Map<peerId, DataConnection>)
-                    // invece di accedere a `peer.connections[senderPeer][0]` che è una
-                    // struttura interna di PeerJS non documentata e può restituire
-                    // una connessione chiusa anche se ne esistono altre attive.
+                    // FIX #2: notify the sender (via WebRTC) to stop sending chunks.
+                    // Without this, the sender keeps reading the file and sending
+                    // chunks on the data channel until the loop ends — wasting
+                    // bandwidth and CPU.
+                    // FIX: use the already-tracked `connections` map (Map<peerId, DataConnection>)
+                    // instead of accessing `peer.connections[senderPeer][0]` which is an
+                    // undocumented internal PeerJS structure and may return a
+                    // closed connection even when other active ones exist.
                     const senderPeer = existing.peer_ip;
                     if (senderPeer && senderPeer !== 'inbox') {
                         // Prima prova la mappa tipizzata `connections`
@@ -2367,7 +2367,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const existing = activeUploads.get(key);
                 const uploadHash = existing ? existing.hash : key;
                 await invoke('cancel_upload', { hash: uploadHash });
-                console.log(`❌ Upload annullato: ${key}`);
+                console.log(`❌ Upload cancelled: ${key}`);
                 if (existing) {
                     existing.cancelled = true;
                     activeUploads.set(key, existing);
@@ -2382,7 +2382,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     `[data-download-id="${CSS.escape(key)}"]`
                 );
                 const cancelBtn = row?.querySelector<HTMLButtonElement>('.cancel-btn');
-                // Disabilita immediatamente il pulsante per evitare doppi click
+                // Disable the button immediately to prevent double clicks
                 if (cancelBtn) {
                     cancelBtn.disabled = true;
                     cancelBtn.textContent = '⏳';
@@ -2397,12 +2397,12 @@ document.addEventListener('DOMContentLoaded', async () => {
                     activeDownloads.delete(key);
                     updateDownloadProgress(Array.from(activeDownloads.values()));
                 }
-                // Feedback visivo nel footer
+                // Visual feedback in the footer
                 if (footerStatus) {
-                    footerStatus.textContent = '⏹ Download annullato';
+                    footerStatus.textContent = '⏹ Download cancelled';
                     footerStatus.className = 'status';
                     setTimeout(() => {
-                        if (footerStatus.textContent === '⏹ Download annullato') {
+                        if (footerStatus.textContent === '⏹ Download cancelled') {
                             footerStatus.textContent = '';
                             footerStatus.className = 'status';
                         }
@@ -2428,10 +2428,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                     renderUploadProgressList();
                 }
                 if (footerStatus) {
-                    footerStatus.textContent = '⏹ Upload annullato';
+                    footerStatus.textContent = '⏹ Upload cancelled';
                     footerStatus.className = 'status';
                     setTimeout(() => {
-                        if (footerStatus.textContent === '⏹ Upload annullato') {
+                        if (footerStatus.textContent === '⏹ Upload cancelled') {
                             footerStatus.textContent = '';
                             footerStatus.className = 'status';
                         }

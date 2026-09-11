@@ -1071,7 +1071,7 @@ body {
     transform: scale(0.9);
 }
 
-/* FIX #6: stato "cancellazione in corso" - feedback visivo prima della rimozione */
+/* FIX #6: "cancelling" state - visual feedback before removal */
 .download-item.cancelling,
 .upload-item.cancelling {
     opacity: 0.5;
@@ -1323,10 +1323,10 @@ body {
     box-shadow: 0 0 10px rgba(34, 211, 238, 0.35);
 }
 
-/* ---------- Connection badge (LED verde/giallo per trasferimenti P2P) ----------
-   Verde  = connessione diretta (host/srflx): nessun consumo di banda server
-   Giallo = traffico instradato via relay TURN: consumo ~2x la dimensione file
-   Nascosto finché lo stato non è rilevato via getStats().                  */
+/* ---------- Connection badge (LED green/yellow for P2P transfers) ----------
+   Green  = direct connection (host/srflx): no server bandwidth consumed
+   Yellow = traffic routed via TURN relay: ~2x the file size in bandwidth
+   Hidden until the status is detected via getStats().                  */
 .conn-badge {
     width: 10px;
     height: 10px;
