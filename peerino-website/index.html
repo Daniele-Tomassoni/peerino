@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Peerino — P2P File Sharing</title>
+    <meta name="description" content="P2P file sharing without cloud, without accounts, without intermediaries.">
+    <script>
+        // If URL has query params (?mode=...), redirect to receiver.
+        // This keeps the URL short (peerino.com?mode=download&...) while
+        // serving the receiver page from /receiver.html.
+        (function() {
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('mode')) {
+                window.location.replace('/receiver.html' + window.location.search);
+            }
+        })();
+    </script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(160deg, #070B14 0%, #16213E 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .container { max-width: 640px; text-align: center; }
+        h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #60a5fa, #22d3ee);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 16px;
+        }
+        .tagline { font-size: 1.2rem; color: #94a3b8; margin-bottom: 40px; }
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 40px;
+            text-align: left;
+        }
+        .feature {
+            background: rgba(30, 41, 59, 0.6);
+            border: 1px solid rgba(56, 189, 248, 0.18);
+            border-radius: 12px;
+            padding: 16px;
+            font-size: 0.9rem;
+        }
+        .feature strong { display: block; color: #38bdf8; margin-bottom: 4px; }
+        .download-btn {
+            display: inline-block;
+            padding: 16px 40px;
+            background: linear-gradient(135deg, #3b82f6, #22d3ee);
+            color: #fff;
+            text-decoration: none;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 1.1rem;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .download-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
+        }
+        .footer { margin-top: 40px; font-size: 0.8rem; color: #64748b; }
+        .footer a { color: #60a5fa; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Peerino</h1>
+        <p class="tagline">P2P file sharing without cloud, without accounts, without intermediaries.</p>
+
+        <div class="features">
+            <div class="feature">
+                <strong>🔗 Share via link</strong>
+                Generate a link, send it to anyone. They download from their browser.
+            </div>
+            <div class="feature">
+                <strong>📥 Receive via link</strong>
+                Create an inbox link and receive files from anyone, no app required.
+            </div>
+            <div class="feature">
+                <strong>🔒 Private</strong>
+                End-to-end encrypted WebRTC. Files never touch a cloud server.
+            </div>
+            <div class="feature">
+                <strong>🏠 LAN fallback</strong>
+                Direct transfer on the same network, without going through the internet.
+            </div>
+        </div>
+
+        <a href="https://github.com/TUO-USERNAME/peerino/releases/latest/download/peerino-installer.msi" class="download-btn">
+            ⬇ Download for Windows
+        </a>
+
+        <div class="footer">
+            Open source (AGPLv3) · <a href="https://github.com/TUO-USERNAME/peerino">GitHub</a> · <a href="mailto:support@peerino.com">support@peerino.com</a>
+        </div>
+    </div>
+</body>
+</html>
