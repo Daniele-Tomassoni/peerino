@@ -81,7 +81,7 @@ impl UploadTracker {
         }
     }
 
-    /// FIX: ottieni metriche correnti (per telemetria / debug)
+    /// FIX: get current metrics (for telemetry / debug)
     pub async fn get_metrics(&self) -> UploadMetrics {
         let active = self.active.lock().await;
         UploadMetrics {
@@ -90,7 +90,7 @@ impl UploadTracker {
         }
     }
 
-    /// Aggiorna il progresso di un upload
+    /// Update progress of an upload
     pub async fn update_progress(
         &self,
         hash: &str,
@@ -124,7 +124,7 @@ impl UploadTracker {
         });
     }
 
-    /// Rimuovi un upload completato
+    /// Remove a completed upload
     pub async fn remove_upload(&self, hash: &str) {
         let mut active = self.active.lock().await;
         // Entries are stored under key "{peer_id}-{hash}", so we must scan
@@ -141,19 +141,19 @@ impl UploadTracker {
         flags.remove(hash);
     }
 
-    /// Ottieni tutti gli upload attivi
+    /// Get all active uploads
     pub async fn get_all(&self) -> Vec<UploadProgress> {
         let active = self.active.lock().await;
         active.values().cloned().collect()
     }
 
-    /// Annulla un upload in corso
-    /// FIX: telemetria — incrementa counter solo se l'upload esisteva e non era già cancellato
+    /// Cancel an in-progress upload
+    /// FIX: telemetry — increment counter only if the upload existed and was not already cancelled
     pub async fn cancel_upload(&self, hash: &str) {
         let mut should_count = false;
-        // Imposta lo stato di cancellazione nel progresso
-        // Nota: gli upload sono memorizzati con chiave "peer_id-hash",
-        // ma il frontend invia solo l'hash. Cerchiamo per campo hash.
+        // Set the cancellation state in the progress entry
+        // Note: uploads are stored under key "peer_id-hash",
+        // but the frontend only sends the hash. We scan by the hash field.
         {
             let mut active = self.active.lock().await;
             for (_, progress) in active.iter_mut() {
@@ -164,7 +164,7 @@ impl UploadTracker {
             }
         }
 
-        // Imposta il flag di cancellazione
+        // Set the cancellation flag
         {
             let flags = self.cancelled_flags.lock().await;
             if let Some(flag) = flags.get(hash) {
@@ -179,7 +179,7 @@ impl UploadTracker {
         }
     }
 
-    /// Registra un flag di cancellazione per un upload
+    /// Register a cancellation flag for an upload
     pub async fn register_cancellation_flag(&self, hash: &str) -> Arc<AtomicBool> {
         let flag = Arc::new(AtomicBool::new(false));
         let mut flags = self.cancelled_flags.lock().await;
@@ -187,8 +187,8 @@ impl UploadTracker {
         flag
     }
 
-    /// Controlla se un upload è stato annullato
-    /// FIX #5: versione sincrona con try_lock per evitare contesa nei loop hot path
+    /// Check if an upload has been cancelled
+    /// FIX #5: synchronous version with try_lock to avoid contention in hot loops
     pub fn is_cancelled(&self, hash: &str) -> bool {
         if let Ok(flags) = self.cancelled_flags.try_lock() {
             flags.get(hash).map(|f| f.load(Ordering::Relaxed)).unwrap_or(false)
@@ -198,7 +198,7 @@ impl UploadTracker {
     }
 }
 
-/// Comando per ottenere il progresso degli upload
+/// Command to get upload progress
 ///
 /// FIX: short-circuit when there are no active uploads to avoid allocating /
 /// serializing an empty Vec on every frontend poll (the UI calls this every
@@ -216,21 +216,21 @@ pub async fn get_upload_progress(
     Ok(state.upload_tracker.get_all().await)
 }
 
-/// Comando per annullare un upload
+/// Command to cancel an upload
 #[tauri::command]
 pub async fn cancel_upload(
     hash: String,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<String, String> {
     state.upload_tracker.cancel_upload(&hash).await;
-    // FIX #4: NON chiamare download_tracker.cancel_download qui.
-    // Il frontend già invoca cancel_download separatamente quando necessario.
-    // Chiamare entrambi causa race condition (TOCTOU sul mutex active).
-    // Se il caller vuole cancellare anche download correlati, deve farlo esplicitamente.
-    Ok(format!("Upload annullato: {}", hash))
+    // FIX #4: Do NOT call download_tracker.cancel_download here.
+    // The frontend already invokes cancel_download separately when needed.
+    // Calling both causes a race condition (TOCTOU on the active mutex).
+    // If the caller wants to cancel related downloads too, they must do so explicitly.
+    Ok(format!("Upload cancelled: {}", hash))
 }
 
-/// FIX: comando telemetria — ottieni metriche upload
+/// FIX: telemetry command — get upload metrics
 #[tauri::command]
 pub async fn get_upload_metrics(
     state: tauri::State<'_, crate::AppState>,

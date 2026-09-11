@@ -18,12 +18,12 @@ use crate::database::files::FileRepository;
 use tauri::State;
 use std::path::PathBuf;
 
-/// Restituisce la lista di tutti i file registrati
-/// - Carica i file dal database (scansione avviene solo all'avvio o su refresh manuale)
-/// - Aggiorna l'indice in memoria
-/// - Verifica che i file esistano effettivamente su disco
-/// - Restituisce JSON con tutti i file: { filename, size, hash, uploaded_at }
-/// - Ordinato per data di caricamento decrescente (più recenti prima)
+/// Returns the list of all registered files
+/// - Loads files from the database (scan only runs at startup or on manual refresh)
+/// - Updates the in-memory index
+/// - Verifies that files actually exist on disk
+/// - Returns JSON with all files: { filename, size, hash, uploaded_at }
+/// - Sorted by upload date descending (newest first)
 #[tauri::command]
 pub async fn list_files(state: State<'_, AppState>) -> Result<Vec<FileInfo>, String> {
     let shared_folder = state.shared_folder.clone();
@@ -101,6 +101,6 @@ pub async fn refresh_files(state: State<'_, AppState>) -> Result<Vec<FileInfo>, 
 
 #[cfg(test)]
 mod tests {
-    // I test verranno eseguiti con integrazione
-    // Tauri 2.0 non supporta mock_state in test
+    // Tests will run with integration
+    // Tauri 2.0 does not support mock_state in tests
 }

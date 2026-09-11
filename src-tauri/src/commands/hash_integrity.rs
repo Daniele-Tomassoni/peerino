@@ -13,26 +13,26 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
-// Telemetria integrità dati: contatori globali per hash mismatch e upload unverified.
-// Permette di diagnosticare bug nel calcolo hash lato browser o corruzione chunk
-// durante il trasferimento.
+// Data integrity telemetry: global counters for hash mismatch and unverified uploads.
+// Allows diagnosing bugs in browser-side hash calculation or chunk corruption
+// during transfer.
 
 use serde::Serialize;
 use tauri::State;
 
-/// Snapshot dei contatori di integrità dati
+/// Snapshot of data integrity counters
 #[derive(Debug, Clone, Serialize)]
 pub struct IntegrityMetrics {
-    /// Numero totale di upload ricevuti il cui hash non corrispondeva a quello
-    /// dichiarato dal browser. Un valore > 0 indica corruzione chunk o bug.
+    /// Total number of received uploads whose hash did not match the one
+    /// declared by the browser. A value > 0 indicates chunk corruption or a bug.
     pub hash_mismatch_total: u64,
-    /// Numero totale di upload ricevuti SENZA expected_hash (browser legacy
-    /// o errore nel calcolo hash lato mittente). Se alto, l'integrità è
-    /// parzialmente bypassata.
+    /// Total number of received uploads WITHOUT expected_hash (browser legacy
+    /// or sender-side hash calculation error). If high, integrity is
+    /// partially bypassed.
     pub unverified_uploads_total: u64,
 }
 
-/// Comando Tauri: ottieni snapshot dei contatori di integrità.
+/// Tauri command: get a snapshot of the integrity counters.
 #[tauri::command]
 pub async fn get_integrity_metrics(
     state: State<'_, crate::AppState>,

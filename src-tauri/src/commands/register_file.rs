@@ -24,19 +24,19 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 const MAX_FILES: usize = 1000;
 const BUFFER_SIZE: usize = 64 * 1024; // 64KB
 
-/// Registra un file nella shared folder
-/// - Riceve il percorso assoluto del file
-/// - Apre il file in streaming con tokio::fs
-/// - Calcola SHA-256 in streaming durante la copia
-/// - Copia il file in shared-folder/ gestendo conflitti di nome
-/// - Inserisce i metadati in un indice locale e nel database
-/// - Restituisce l'hash calcolato
+/// Registers a file in the shared folder
+/// - Receives the absolute file path
+/// - Opens the file via streaming with tokio::fs
+/// - Computes SHA-256 in streaming during the copy
+/// - Copies the file into shared-folder/ handling name conflicts
+/// - Inserts metadata into a local index and the database
+/// - Returns the computed hash
 #[tauri::command]
 pub async fn register_file(
     file_path: String,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    log::info!("register_file chiamato con path: {}", file_path);
+    log::info!("register_file called with path: {}", file_path);
     
     let source_path = Path::new(&file_path);
     
@@ -175,7 +175,7 @@ pub async fn register_file(
         });
     }
 
-    log::info!("File registrato con successo: {} (hash: {})", filename, hash);
+    log::info!("File registered successfully: {} (hash: {})", filename, hash);
     
     Ok(hash)
 }

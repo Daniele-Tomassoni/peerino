@@ -32,56 +32,56 @@ pub async fn finalize_incoming_file(
     // Remove and take ownership of the upload state
     let mut uploads = state.incoming_uploads.lock().await;
     let upload = uploads.remove(&peer_id)
-        .ok_or_else(|| format!("Upload non trovato per peer_id={}", peer_id))?;
+        .ok_or_else(|| format!("Upload not found for peer_id={}", peer_id))?;
 
     // Calculate actual hash
     let actual_hash = hex::encode(upload.hasher.finalize());
 
-    // FAIL-CLOSED: integrità dati garantita prima di qualsiasi operazione di salvataggio.
-    // Se il browser ha fornito un expected_hash, deve combaciare con quello calcolato
-    // dal backend sui byte ricevuti. Qualsiasi mismatch indica corruzione o
-    // manipolazione del file durante il trasferimento, e in quel caso il file
-    // NON deve essere salvato in shared-folder/.
+    // FAIL-CLOSED: data integrity guaranteed before any save operation.
+    // If the browser provided an expected_hash, it must match the one computed
+    // by the backend from the received bytes. Any mismatch indicates corruption or
+    // tampering during transfer, and in that case the file
+    // MUST NOT be saved to shared-folder/.
     //
-    // Se expected_hash è vuoto (browser legacy / fallback / errore nel calcolo
-    // lato mittente), il salvataggio procede con un warning esplicito ma
-    // l'upload viene marcato come "unverified" (campo telemetria).
+    // If expected_hash is empty (browser legacy / fallback / error in calculation
+    // on the sender side), saving proceeds with an explicit warning but
+    // the upload is marked as "unverified" (telemetry field).
     let unverified = upload.expected_hash.is_empty();
     if !unverified && actual_hash != upload.expected_hash {
         // Telemetria: incrementa contatore atomico globale.
         state.hash_mismatch_total
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
-        // Chiudi l'handle del file PRIMA di cancellarlo (importante su Windows).
+        // Close the file handle BEFORE deleting it (important on Windows).
         drop(upload.file);
 
-        // Cancella il file temporaneo orfano.
+        // Delete the orphaned temp file.
         if let Err(e) = tokio::fs::remove_file(&upload.temp_path).await {
             log::error!(
-                "Hash mismatch: impossibile cancellare temp file {:?}: {}",
+                "Hash mismatch: failed to delete temp file {:?}: {}",
                 upload.temp_path, e
             );
         } else {
-            log::info!("Temp file cancellato dopo hash mismatch: {:?}", upload.temp_path);
+            log::info!("Temp file deleted after hash mismatch: {:?}", upload.temp_path);
         }
 
         log::error!(
-            "❌ HASH MISMATCH per peer_id={}: expected={}, actual={}. File NON salvato. \
-             Possibili cause: corruzione chunk WebRTC, bug nel calcolo hash lato browser, \
-             oppure manipolazione. Il destinatario deve riprovare.",
+            "❌ HASH MISMATCH for peer_id={}: expected={}, actual={}. File NOT saved. \
+             Possible causes: WebRTC chunk corruption, bug in browser-side hash calculation, \
+             or tampering. The recipient must retry.",
             peer_id, upload.expected_hash, actual_hash
         );
 
         return Err(format!(
-            "Hash mismatch: il file ricevuto non corrisponde all'hash atteso ({} vs {}). \
-             File corrotto o manomesso: NON salvato per garantire integrità dati.",
+            "Hash mismatch: the received file does not match the expected hash ({} vs {}). \
+             File corrupted or tampered: NOT saved to guarantee data integrity.",
             upload.expected_hash, actual_hash
         ));
     }
 
     if unverified {
         log::warn!(
-            "⚠️ Upload UNVERIFIED per peer_id={}: expected_hash vuoto, hash non verificato.",
+            "⚠️ Upload UNVERIFIED for peer_id={}: expected_hash empty, hash not verified.",
             peer_id
         );
         state.unverified_uploads_total
@@ -94,7 +94,7 @@ pub async fn finalize_incoming_file(
     // ✅ Re-validate filename before joining into shared_folder (defense in depth, S1)
     if !is_safe_filename(&upload.filename) {
         let _ = tokio::fs::remove_file(&upload.temp_path).await;
-        return Err(format!("Nome file non sicuro: {}", upload.filename));
+        return Err(format!("Unsafe filename: {}", upload.filename));
     }
 
     // Move temp file to shared folder with conflict resolution (Windows-safe).
@@ -115,7 +115,7 @@ pub async fn finalize_incoming_file(
         counter += 1;
     }
     tokio::fs::rename(&upload.temp_path, &dest_path).await
-        .map_err(|e| format!("Errore spostamento file: {}", e))?;
+        .map_err(|e| format!("Failed to move file: {}", e))?;
 
     // Use the resolved filename (may differ from upload.filename if dedup occurred)
     let resolved_filename = dest_path.file_name()

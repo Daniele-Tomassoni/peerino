@@ -146,7 +146,7 @@ fn main() {
                     relay_manager: Arc::new(tokio::sync::Mutex::new(
                         p2p::RelayManager::new(Default::default())
                     )),
-                    // PeerID corrente (aggiornato da PeerJS al connect)
+                    // Current PeerID (updated by PeerJS on connect)
                     peer_id: tokio::sync::Mutex::new(None),
                     // File hash pending for P2P-to-Web transfer
                     pending_file_hash: tokio::sync::Mutex::new(None),

@@ -251,7 +251,7 @@ async fn stream_file_response(
         file_index
             .get(&hash)
             .cloned()
-            .ok_or((StatusCode::NOT_FOUND, "File non trovato".to_string()))?
+            .ok_or((StatusCode::NOT_FOUND, "File not found".to_string()))?
     };
 
     // Verifica che il filename sia sicuro (no path traversal)
@@ -264,7 +264,10 @@ async fn stream_file_response(
 
     // Verifica che il file esista
     if !file_path.exists() {
-        return Err((StatusCode::NOT_FOUND, "File non trovato sul disco".to_string()));
+    }
+----
+        return Err((StatusCode::NOT_FOUND, "File not found on disk".to_string()));
+    }
     }
 
     // Apri il file
@@ -315,8 +318,8 @@ async fn receiver_page_handler() -> Response {
     (StatusCode::OK, headers, html).into_response()
 }
 
-/// Handler per ricevere un file caricato nella Scatola di Consegna Inversa (Locale)
-/// Lo streaming del body evita di caricare l'intero file in memoria (regola progetto: no Vec<u8>).
+/// Handler for receiving a file uploaded to the Reverse Delivery Box (Local)
+/// Body streaming avoids loading the entire file into memory (project rule: no Vec<u8>).
 async fn inbox_upload_handler(
     Path(inbox_id): Path<String>,
     Query(params): Query<HashMap<String, String>>,
@@ -450,7 +453,7 @@ async fn inbox_upload_handler(
         let _ = target_file.flush().await;
         let _ = tokio::fs::remove_file(&target_path).await;
         let _ = state.download_tracker.remove_download(&download_hash).await;
-        return Err((StatusCode::REQUEST_TIMEOUT, "Download annullato".to_string()));
+        return Err((StatusCode::REQUEST_TIMEOUT, "Download cancelled".to_string()));
     }
 
     target_file.flush().await

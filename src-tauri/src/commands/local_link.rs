@@ -34,11 +34,11 @@ pub async fn generate_local_link(state: State<'_, AppState>, hash: String) -> Re
         );
     }
 
-    // Verifica che il file esista nell'indice
+    // Verify the file exists in the index
     {
         let file_index = state.file_index.lock().await;
         if !file_index.contains_key(&hash) {
-            return Err("File non trovato. Seleziona un file dalla lista.".to_string());
+            return Err("File not found. Select a file from the list.".to_string());
         }
     }
 

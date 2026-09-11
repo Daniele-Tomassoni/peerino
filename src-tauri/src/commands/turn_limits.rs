@@ -13,48 +13,48 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
-// Comandi Tauri per gestire il limite TURN e la telemetria associata.
-// Esponono al frontend:
-// - max_file_size (letto da env o default 100MB)
-// - max_file_size_buffer (con margine 10% per overhead protocollo)
-// - rejections_total (counter globale, atomicu64)
+// Tauri commands for managing the TURN limit and associated telemetry.
+// Exposes to the frontend:
+// - max_file_size (read from env or default 100MB)
+// - max_file_size_buffer (with 10% margin for protocol overhead)
+// - rejections_total (global counter, atomicu64)
 
 use crate::commands::{get_turn_max_file_size, get_turn_max_file_size_buffer};
 use serde::Serialize;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Snapshot dei limiti TURN e telemetria
+/// Snapshot of TURN limits and telemetry
 #[derive(Debug, Clone, Serialize)]
 pub struct TurnLimits {
-    /// Limite dichiarato all'utente (es. 100 MB).
+    /// Limit declared to the user (e.g. 100 MB).
     pub max_file_size: u64,
-    /// Limite effettivo con margine overhead (es. 110 MB).
+    /// Effective limit with overhead margin (e.g. 110 MB).
     pub max_file_size_buffer: u64,
-    /// Quanti trasferimenti sono stati rifiutati per superamento limite.
+    /// How many transfers have been rejected for exceeding the limit.
     pub rejections_total: u64,
 }
 
-/// Counter globale per i rifiuti (atomicu64, no lock).
-/// Viene incrementato sia dal backend (per upload inbox) sia letto
-/// dal frontend per diagnostica.
+/// Global counter for rejections (atomicu64, no lock).
+/// Incremented both by the backend (for inbox uploads) and read
+/// by the frontend for diagnostics.
 static TURN_REJECTIONS: AtomicU64 = AtomicU64::new(0);
 
-/// Incrementa il counter di rifiuti TURN. Chiamato dal backend Rust quando
-/// rileva un file over-limit su connessione TURN (futuro: hook su
-/// `init_incoming_upload` per validare la dimensione).
+/// Increment the TURN rejection counter. Called by the Rust backend when
+/// an over-limit file is detected on a TURN connection (future: hook into
+/// `init_incoming_upload` to validate size).
 pub fn record_turn_rejection() {
     TURN_REJECTIONS.fetch_add(1, Ordering::Relaxed);
 }
 
-/// Comando Tauri: registra un rifiuto TURN dal frontend (es. blocco pre-stream).
-/// Ritorna il counter aggiornato.
+/// Tauri command: record a TURN rejection from the frontend (e.g. pre-stream block).
+/// Returns the updated counter.
 #[tauri::command]
 pub async fn record_turn_rejection_cmd() -> Result<u64, String> {
     record_turn_rejection();
     Ok(TURN_REJECTIONS.load(Ordering::Relaxed))
 }
 
-/// Comando Tauri: ottieni i limiti TURN correnti e la telemetria.
+/// Tauri command: get current TURN limits and telemetry.
 #[tauri::command]
 pub async fn get_turn_limits() -> Result<TurnLimits, String> {
     Ok(TurnLimits {

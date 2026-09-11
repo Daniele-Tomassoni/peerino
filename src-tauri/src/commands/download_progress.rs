@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// Struttura per il progresso del download
+/// Download progress structure
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct DownloadProgress {
     pub hash: String,
@@ -30,13 +30,13 @@ pub struct DownloadProgress {
     pub cancelled: bool,
 }
 
-/// Tracker per i download attivi
+/// Tracker for active downloads
 #[derive(Clone)]
 pub struct DownloadTracker {
     pub active: Arc<tokio::sync::Mutex<HashMap<String, DownloadProgress>>>,
-    /// Stato di cancellazione per i download HTTP
+    /// Cancellation status for HTTP downloads
     pub cancelled_flags: Arc<tokio::sync::Mutex<HashMap<String, Arc<AtomicBool>>>>,
-    /// FIX: telemetria — contatore totale cancellazioni (download)
+    /// FIX: telemetry — total cancellation counter (download)
     pub cancellations_total: Arc<std::sync::atomic::AtomicU64>,
 }
 
@@ -56,7 +56,7 @@ impl DownloadTracker {
         }
     }
 
-    /// FIX: ottieni metriche correnti (per telemetria / debug)
+    /// FIX: get current metrics (for telemetry / debug)
     pub async fn get_metrics(&self) -> DownloadMetrics {
         let active = self.active.lock().await;
         DownloadMetrics {
@@ -107,10 +107,10 @@ impl DownloadTracker {
         flags.remove(hash);
     }
     
-    /// Annulla un download in corso
+    /// Cancel an in-progress download
     pub async fn cancel_download(&self, hash: &str) {
-        // FIX: telemetria — incrementa counter solo se il download esisteva
-        // (evita di conteggiare cancel su hash inesistenti / no-op)
+        // FIX: telemetry — increment counter only if the download existed
+        // (avoid counting cancels on non-existent hashes / no-ops)
         let mut should_count = false;
         {
             let mut active = self.active.lock().await;
@@ -122,7 +122,7 @@ impl DownloadTracker {
             }
         }
 
-        // Imposta il flag di cancellazione
+        // Set the cancellation flag
         {
             let flags = self.cancelled_flags.lock().await;
             if let Some(flag) = flags.get(hash) {
@@ -137,38 +137,38 @@ impl DownloadTracker {
         }
     }
     
-    /// Ottieni tutti i download attivi
+    /// Get all active downloads
     pub async fn get_all(&self) -> Vec<DownloadProgress> {
         let active = self.active.lock().await;
         active.values().cloned().collect()
     }
     
-    /// Registra un flag di cancellazione per un download
-    /// FIX #3: riusa il flag esistente per lo stesso hash se NON è già stato
-    /// cancellato, evitando il clobbering che causava race condition tra
-    /// re-registrazione e cancellazione in volo.
+    /// Register a cancellation flag for a download
+    /// FIX #3: reuse the existing flag for the same hash if it is NOT already
+    /// cancelled, avoiding the clobbering that caused a race condition between
+    /// re-registration and in-flight cancellation.
     pub async fn register_cancellation_flag(&self, hash: &str) -> Arc<AtomicBool> {
         let mut flags = self.cancelled_flags.lock().await;
         if let Some(existing) = flags.get(hash) {
-            // Se il flag esistente è già true (cancellato), creane uno nuovo
-            // resettato a false. Altrimenti riusalo per non perdere lo stato.
+            // If the existing flag is already true (cancelled), create a new one
+            // reset to false. Otherwise reuse it to avoid losing state.
             if !existing.load(Ordering::SeqCst) {
                 return existing.clone();
             }
-            // Flag già cancellato: creane uno nuovo per il prossimo download
+            // Flag already cancelled: create a new one for the next download
         }
         let flag = Arc::new(AtomicBool::new(false));
         flags.insert(hash.to_string(), flag.clone());
         flag
     }
     
-    /// Controlla se un download è stato annullato
-    /// FIX #5: usa try_lock per non bloccare il runtime async su ogni chunk.
-    /// Se il lock è conteso, ritorna false (assumi non cancellato): il loop
-    /// ricontrollerà al prossimo chunk. False negative è OK; false positive
-    /// bloccherebbe download validi.
-    /// NOTA: questa versione è sincrona (non async) per essere chiamata nei
-    /// loop hot path senza await. I call site devono essere aggiornati.
+    /// Check if a download has been cancelled
+    /// FIX #5: use try_lock to avoid blocking the async runtime on every chunk.
+    /// If the lock is contended, return false (assume not cancelled): the loop
+    /// will re-check at the next chunk. False negative is OK; false positive
+    /// would block valid downloads.
+    /// NOTE: this version is synchronous (non-async) to be called in
+    /// hot loops without await. Call sites must be updated.
     pub fn is_cancelled(&self, hash: &str) -> bool {
         if let Ok(flags) = self.cancelled_flags.try_lock() {
             flags.get(hash).map(|f| f.load(Ordering::Relaxed)).unwrap_or(false)
@@ -178,7 +178,7 @@ impl DownloadTracker {
     }
 }
 
-/// Comando per ottenere il progresso dei download
+/// Command to get download progress
 #[tauri::command]
 pub async fn get_download_progress(
     state: tauri::State<'_, crate::AppState>,
@@ -187,17 +187,17 @@ pub async fn get_download_progress(
 }
 
 
-/// Comando per annullare un download
+/// Command to cancel a download
 #[tauri::command]
 pub async fn cancel_download(
     hash: String,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<String, String> {
     state.download_tracker.cancel_download(&hash).await;
-    Ok(format!("Download annullato: {}", hash))
+    Ok(format!("Download cancelled: {}", hash))
 }
 
-/// FIX: comando telemetria — ottieni metriche download
+/// FIX: telemetry command — get download metrics
 #[tauri::command]
 pub async fn get_download_metrics(
     state: tauri::State<'_, crate::AppState>,
