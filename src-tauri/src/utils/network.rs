@@ -16,7 +16,7 @@
 use std::net::TcpListener;
 use std::time::Duration;
 
-/// Risultato del rilevamento rete
+/// Network detection result
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct NetworkInfo {
     pub ip: String,

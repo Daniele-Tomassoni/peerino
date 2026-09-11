@@ -17,15 +17,15 @@ use crate::AppState;
 use std::path::Path;
 use tauri::State;
 
-/// Apre la cartella condivisa nel file manager del sistema
-/// Usa il crate `open` per cross-platform compatibility
+/// Opens the shared folder in the system file manager
+/// Uses the `open` crate for cross-platform compatibility
 #[tauri::command]
 pub async fn open_shared_folder(state: State<'_, AppState>) -> Result<(), String> {
-    log::info!("open_shared_folder chiamato");
-    
+    log::info!("open_shared_folder called");
+
     let shared_folder = state.shared_folder.clone();
-    
-    // Risolvi il percorso assoluto
+
+    // Resolve the absolute path
     let path = if Path::new(&shared_folder).is_absolute() {
         Path::new(&shared_folder).to_path_buf()
     } else {
@@ -34,21 +34,21 @@ pub async fn open_shared_folder(state: State<'_, AppState>) -> Result<(), String
             .map(|cwd| cwd.join(&shared_folder))
             .unwrap_or_else(|_| Path::new(&shared_folder).to_path_buf())
     };
-    
-    log::info!("Apertura cartella: {:?}", path);
-    
-    // Usa il crate `open` per aprire la cartella nel file manager
+
+    log::info!("Opening folder: {:?}", path);
+
+    // Use the `open` crate to open the folder in the file manager
     open::that(&path)
         .map_err(|e| {
-            log::error!("Errore apertura cartella: {}", e);
-            format!("Impossibile aprire la cartella: {}", e)
+            log::error!("Error opening folder: {}", e);
+            format!("Failed to open folder: {}", e)
         })?;
-    
-    log::info!("Cartella aperta con successo");
+
+    log::info!("Folder opened successfully");
     Ok(())
 }
 
-/// Verifica se la cartella condivisa esiste
+/// Check if the shared folder exists
 #[tauri::command]
 pub async fn check_shared_folder(state: State<'_, AppState>) -> Result<bool, String> {
     let shared_folder = state.shared_folder.clone();
@@ -58,5 +58,5 @@ pub async fn check_shared_folder(state: State<'_, AppState>) -> Result<bool, Str
 
 #[cfg(test)]
 mod tests {
-    // I test verranno eseguiti con integrazione
+    // Tests will run with integration
 }
