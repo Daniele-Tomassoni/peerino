@@ -126,7 +126,7 @@
                 <section class="sharing-section panel">
                     <h2>🌐 Sharing</h2>
 
-                    <!-- Local server info (il percorso LAN viene scelto automaticamente dal link) -->
+                    <!-- Local server info (the LAN path is chosen automatically by the link) -->
 
                     <div id="local-context" class="context-panel">
                         <div class="context-row">
@@ -135,16 +135,16 @@
                             <span id="server-led-small" class="led-indicator led-off">●</span>
                             <span id="server-status-small">Inactive</span>
                         </div>
-                        <!-- Il server locale si avvia automaticamente quando si genera
-                             un link o una inbox: abilita il fallback LAN nei link -->
+                        <!-- The local server starts automatically when generating a link
+                             or inbox: enables LAN fallback in links -->
                         <hr class="divider">
                     </div>
 
                     <!-- P2P Section (always visible) -->
                     <div class="p2p-section">
-                        <!-- NOTA: il motore PeerJS gira in background (headless):
-                             genera il PeerID necessario a Generate Link / Create Inbox.
-                             La UI di connessione manuale app-to-app è stata rimossa. -->
+                        <!-- NOTE: the PeerJS engine runs in background (headless):
+                             it generates the PeerID needed for Generate Link / Create Inbox.
+                             The manual app-to-app connection UI has been removed. -->
                         <!-- P2P-to-Web Link with PeerID -->
                         <div id="web-link-section" class="web-link-section">
                             <div class="button-with-tip">
@@ -162,7 +162,7 @@
 
                     <hr class="divider">
 
-                    <!-- Unified Inbox: il link sceglie da solo LAN / STUN / TURN -->
+                    <!-- Unified Inbox: the link automatically chooses LAN / STUN / TURN -->
                     <div id="internet-inbox-section" class="inbox-section">
                         <div class="button-with-tip">
                             <button id="create-inbox-internet-btn" class="btn-primary full-width">📥 Create Inbox</button>
@@ -210,7 +210,7 @@
         </footer>
     </div>
 
-    <!-- Tooltip globale per i LED di connessione (position:fixed, mai tagliato dai contenitori) -->
+    <!-- Global tooltip for connection LEDs (position:fixed, never clipped by containers) -->
     <div id="conn-tooltip" class="conn-tooltip" role="tooltip"></div>
 
     <script type="module" src="./app.ts"></script>

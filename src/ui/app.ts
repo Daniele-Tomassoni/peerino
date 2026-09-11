@@ -178,7 +178,7 @@ interface IncomingFile {
     hash: string;
     chunks: Map<number, Uint8Array>;
     receivedBytes: number;
-    /** Timestamp di inizio trasferimento (per calcolo velocità reale) */
+    /** Transfer start timestamp (for real speed calculation) */
     startTime: number;
 }
 const incomingFiles = new Map<string, IncomingFile>();
@@ -189,19 +189,19 @@ interface IncomingUpload {
     size: number;
     expectedHash: string;
     receivedBytes: number;
-    /** Timestamp di inizio trasferimento (per calcolo velocità reale) */
+    /** Transfer start timestamp (for real speed calculation) */
     startTime: number;
-    /** Flag per prevenire doppie finalizzazioni (upload_end vs auto-finalize) */
+    /** Flag to prevent double finalization (upload_end vs auto-finalize) */
     finalized: boolean;
-    /** FIX: idempotenza upload_complete. Impedisce doppio invio se sia
-     *  upload_end che auto-finalizzazione cercano di confermare. */
+    /** FIX: upload_complete idempotency. Prevents double send if both
+     *  upload_end handler and auto-finalization try to confirm. */
     uploadCompleteSent: boolean;
 }
 const incomingUploads = new Map<string, IncomingUpload>();
 
-// FIX: helper idempotente per inviare upload_complete al browser.
-// Garantisce che il messaggio venga inviato una sola volta, indipendentemente
-// dal percorso (upload_end handler o auto-finalizzazione).
+// FIX: idempotent helper to send upload_complete to the browser.
+// Guarantees the message is sent exactly once, regardless of
+// the code path (upload_end handler or auto-finalization).
 function sendUploadComplete(conn: DataConnection, upload: IncomingUpload): void {
     if (upload.uploadCompleteSent) {
         log('ℹ️ upload_complete already sent, skipping');
@@ -238,28 +238,28 @@ interface TransferRecord {
 const recentTransfers: TransferRecord[] = [];
 const MAX_RECENT_TRANSFERS = 50;
 
-// ---------- Connection path detection (LED verde/giallo TURN) ----------
-// Percorso connessione per chiave di trasferimento:
-// 'direct' = P2P diretto (host/srflx, nessun consumo banda server)
-// 'turn'   = traffico instradato dal relay TURN (~2x la dimensione del file)
+// ---------- Connection path detection (LED green/yellow TURN) ----------
+// Connection path per transfer key:
+// 'direct' = P2P direct (host/srflx, no server bandwidth consumed)
+// 'turn'   = traffic routed via TURN relay (~2x the file size)
 const connectionPaths = new Map<string, 'direct' | 'turn'>();
 
 const TOOLTIP_DIRECT = "Files don't consume server bandwidth. You can send files of any size.";
 const TOOLTIP_TURN = "This file is consuming server bandwidth. Consumption is about twice the file size.";
 
 /**
- * Rileva il percorso della connessione WebRTC tramite getStats().
- * La catena corretta è: candidate-pair selezionata -> local/remoteCandidateId
- * -> candidateType di ciascun candidato (il campo "candidateTypeLocal"
- * NON esiste nelle stats standard).
- * - 'turn'   -> almeno UNO dei due lati è un candidato relay
- * - 'direct' -> host/srflx/prflx (STUN scopre solo l'indirizzo, non trasporta dati)
- * - null     -> stats non disponibili (badge resta nascosto)
+ * Detects the WebRTC connection path via getStats().
+ * The correct chain is: selected candidate-pair -> local/remoteCandidateId
+ * -> candidateType of each candidate (the field "candidateTypeLocal"
+ * does NOT exist in standard stats).
+ * - 'turn'   -> at least ONE of the two sides is a relay candidate
+ * - 'direct' -> host/srflx/prflx (STUN only discovers the address, does not carry data)
+ * - null     -> stats unavailable (badge remains hidden)
  */
 async function detectConnectionPath(conn: DataConnection): Promise<'direct' | 'turn' | null> {
     try {
-        // PeerJS espone la RTCPeerConnection come proprietà pubblica;
-        // fallback su _pc per robustezza tra versioni.
+        // PeerJS exposes the RTCPeerConnection as a public property;
+        // fallback to _pc for robustness across versions.
         const pc: RTCPeerConnection | null =
             (conn as any).peerConnection ?? (conn as any)._pc ?? null;
         if (!pc) return null;
@@ -274,7 +274,7 @@ async function detectConnectionPath(conn: DataConnection): Promise<'direct' | 't
         });
         if (!pair?.localCandidateId || !pair?.remoteCandidateId) return null;
 
-        // RTCStatsReport implementa Map ma alcune versioni di lib.dom non lo tipizzano
+        // RTCStatsReport implements Map but some lib.dom versions don't type it
         const statsMap = stats as unknown as Map<string, any>;
         const local = statsMap.get(pair.localCandidateId);
         const remote = statsMap.get(pair.remoteCandidateId);
@@ -286,16 +286,16 @@ async function detectConnectionPath(conn: DataConnection): Promise<'direct' | 't
     }
 }
 
-/** Aggiorna il badge LED di una riga di trasferimento in base al percorso noto.
- *  fileSize: opzionale. Se passato e path === 'turn' e fileSize > TURN_MAX_FILE_SIZE,
- *  il badge diventa rosso con messaggio di limite superato.
+/** Updates the connection LED badge for a transfer row based on the known path.
+ *  fileSize: optional. If passed and path === 'turn' and fileSize > TURN_MAX_FILE_SIZE,
+ *  the badge turns red with an overlimit message.
  */
 function applyConnBadge(badge: HTMLElement | null, key: string, fileSize?: number): void {
     if (!badge) return;
     const path = connectionPaths.get(key);
     if (path === 'turn') {
-        // TURN: verde se file entro limite, rosso se sopra.
-        // Recupera limite corrente dal backend (cached in memoria).
+        // TURN: green if file is within limit, red if over limit.
+        // Retrieve current limit from backend (cached in memory).
         const turnMax = (window as any).__turnMaxFileSize || 100 * 1024 * 1024;
         if (fileSize !== undefined && fileSize > turnMax) {
             badge.className = 'conn-badge turn-overlimit';
@@ -310,12 +310,12 @@ function applyConnBadge(badge: HTMLElement | null, key: string, fileSize?: numbe
         badge.className = 'conn-badge direct';
         badge.setAttribute('data-tooltip', TOOLTIP_DIRECT);
     }
-    // path undefined: badge invisibile (negoziazione ICE in corso o stats assenti)
+    // path undefined: badge invisible (ICE negotiation in progress or stats absent)
 }
 
-// ---------- Tooltip globale dei LED ----------
-// Un unico elemento position:fixed sul body: non viene tagliato dall'overflow
-// dei pannelli con scroll e viene posizionato sempre dentro il viewport.
+// ---------- Global LED tooltip ----------
+// A single position:fixed element on body: never clipped by overflow
+// of scroll panels and always positioned inside the viewport.
 const connTooltipEl = document.getElementById('conn-tooltip');
 
 function hideConnTooltip(): void {
@@ -330,14 +330,14 @@ function showConnTooltip(badge: HTMLElement): void {
     connTooltipEl.textContent = text;
     connTooltipEl.classList.add('visible');
 
-    // Posiziona rispetto al viewport (misura dopo il render del testo)
+    // Position relative to viewport (measure after text render)
     const rect = badge.getBoundingClientRect();
     const tw = connTooltipEl.offsetWidth;
     const th = connTooltipEl.offsetHeight;
 
-    // Orizzontale: allineato al bordo sinistro del LED, limitato ai bordi schermo
+    // Horizontal: aligned to the left edge of the LED, clamped to screen edges
     let left = Math.max(8, Math.min(rect.left, window.innerWidth - tw - 8));
-    // Verticale: sopra il LED; se non c'è spazio, sotto
+    // Vertical: above the LED; if no space, below
     let top = rect.top - th - 10;
     if (top < 8) top = rect.bottom + 10;
 
@@ -345,7 +345,7 @@ function showConnTooltip(badge: HTMLElement): void {
     connTooltipEl.style.top = `${top}px`;
 }
 
-// Listener delegati: le righe di trasferimento sono create/rimosse dinamicamente
+// Delegated listeners: transfer rows are created/removed dynamically
 document.addEventListener('mouseover', (event) => {
     const target = event.target as HTMLElement | null;
     const badge = target?.closest?.('.conn-badge');
@@ -355,7 +355,7 @@ document.addEventListener('mouseout', (event) => {
     const target = event.target as HTMLElement | null;
     if (target?.closest?.('.conn-badge')) hideConnTooltip();
 });
-// Nascondi il tooltip se la finestra cambia dimensioni (posizione non più valida)
+// Hide the tooltip if the window resizes (position no longer valid)
 window.addEventListener('resize', hideConnTooltip);
 
 // ---------- Utility ----------
@@ -432,7 +432,7 @@ function renderUploadProgressList(): void {
             uploadProgressContainerRight.classList.add('hidden');
         }
         // Show empty state message
-        uploadProgressListRight.innerHTML = '<div class="download-item no-downloads">Nessun upload in corso</div>';
+        uploadProgressListRight.innerHTML = '<div class="download-item no-downloads">No active uploads</div>';
         return;
     }
 
@@ -497,7 +497,7 @@ function renderUploadProgressList(): void {
         if (detailEls[0]) detailEls[0].textContent = `${formatSize(u.bytes_processed)} / ${formatSize(u.total_bytes)}`;
         if (detailEls[1]) detailEls[1].textContent = `${speed.toFixed(1)} MB/s`;
 
-        // LED connessione (verde = diretto, giallo = TURN, rosso = sopra limite)
+        // Connection LED (green = direct, yellow = TURN, red = over limit)
         // FIX: pass u.total_bytes so the SENDER's badge also turns red when the
         // file exceeds the TURN size limit. Previously only the browser receiver
         // (web-receiver.html) got the red error message; the sender's UI was silent.
@@ -827,7 +827,7 @@ async function loadNetworkInfo(): Promise<void> {
 }
 
 async function handleStartServer(): Promise<void> {
-    // Pulsante rimosso dalla UI: la funzione viene richiamata da ensureServerRunning()
+    // Button removed from UI: this function is called by ensureServerRunning()
     if (!startServerBtn) {
         try {
             await invoke<string>('start_http_server');
@@ -862,9 +862,9 @@ async function handleStartServer(): Promise<void> {
     startServerBtn.disabled = false;
 }
 
-// Avvia automaticamente il server HTTP locale se non è attivo.
-// Chiamato da Generate Link / Create Inbox: il link incorpora il fallback
-// LAN (lan=http://IP:3000) solo quando questo server è in esecuzione.
+// Automatically starts the local HTTP server if not already running.
+// Called by Generate Link / Create Inbox: the link embeds the LAN fallback
+// (lan=http://IP:3000) only when this server is running.
 async function ensureServerRunning(): Promise<void> {
     if (serverRunning) return;
     try {
@@ -953,11 +953,11 @@ async function handleDrop(e: DragEvent): Promise<void> {
     }
 }
 
-// ---------- Context (unificato) ----------
-// Con i link "smart" non esiste più la scelta locale/internet da parte
-// dell'utente: il percorso (LAN -> STUN -> TURN) viene deciso automaticamente.
-// La funzione resta per compatibilità ma si limita a garantire che tutte le
-// sezioni del pannello Sharing siano visibili e ad aggiornare lo stato relay.
+// ---------- Context (unified) ----------
+// With "smart" links there is no longer a local/internet choice for the
+// user: the path (LAN -> STUN -> TURN) is decided automatically.
+// This function remains for compatibility but only ensures that all
+// Sharing panel sections are visible and updates the relay status.
 function updateContext(_context?: 'local' | 'internet'): void {
     ['local-context', 'web-link-section', 'internet-inbox-section',
      'row-peer-id', 'row-relay', 'connect-peer-container',
@@ -976,10 +976,10 @@ const TURN_USERNAME = import.meta.env.VITE_TURN_USERNAME || '';
 const TURN_PASSWORD = import.meta.env.VITE_TURN_PASSWORD || '';
 
 /**
- * Maschera un Peer ID per i log visibili all'utente.
- * Mostra solo i primi 12 caratteri, il resto diventa "...".
- * Es: "peerino-74181e9e-1e4e-40e3-b7c0-134bced532ea" → "peerino-74181e9e-1e..."
- * Il Peer ID completo rimane disponibile in console.log per il debug.
+ * Masks a Peer ID for display in user-visible logs.
+ * Shows only the first 12 characters, the rest becomes "...".
+ * E.g.: "peerino-74181e9e-1e4e-40e3-b7c0-134bced532ea" → "peerino-74181e9e-1e..."
+ * The full Peer ID remains available in console.log for debugging.
  */
 function maskPeerId(peerId: string | undefined | null): string {
     if (!peerId) return '(null)';
@@ -1166,16 +1166,16 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
     // Create unique key for this upload (peer + hash) to support multiple simultaneous uploads
     const uploadKey = conn.peer + '-' + fileInfo.hash;
 
-    // TURN size limit (Fase 2): blocca file oltre TURN_MAX_FILE_SIZE su TURN.
-    // FIX CRITICO #1: il rilevamento del percorso ICE viene riprovato fino a
-    // 10 volte (1s di intervallo) invece di una singola chiamata. Una sola
-    // getStats() subito dopo l'apertura della connessione spesso ritorna
-    // null (candidate-pair non ancora selezionato), e in quel caso il limite
-    // non viene applicato, permettendo il trasferimento di file >100MB su TURN.
-    // FIX BASSO #11: usa la cache __turnMaxFileSize (già caricata all'avvio)
-    // invece di chiamare l'IPC get_turn_limits ogni volta. Evita 2 IPC ridondanti.
+    // TURN size limit (Phase 2): blocks files exceeding TURN_MAX_FILE_SIZE on TURN.
+    // FIX CRITICAL #1: ICE path detection is retried up to
+    // 10 times (1s interval) instead of a single call. A single
+    // getStats() right after connection open often returns
+    // null (candidate-pair not yet selected), and in that case the limit
+    // is not applied, allowing files >100MB to transfer over TURN.
+    // FIX LOW #11: use the __turnMaxFileSize cache (loaded at startup)
+    // instead of calling the get_turn_limits IPC every time. Avoids 2 redundant IPCs.
     const turnMaxSize = (window as any).__turnMaxFileSize || 100 * 1024 * 1024;
-    // Fallback: se la cache non è ancora pronta, cerca di caricarla una volta
+    // Fallback: if the cache is not ready yet, try loading it once
     if (!(window as any).__turnMaxFileSize) {
         try {
             const limits = await invoke<{ max_file_size: number }>('get_turn_limits');
@@ -1184,10 +1184,10 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
     }
 
     // Poll ICE stats with retries (up to 10 attempts, 1s apart).
-    // FIX: in caso di esaurimento del loop senza risultato, assumiamo 'turn'
-    // (massima prudenza) per non permettere il passaggio di file >100MB su TURN
-    // quando il rilevamento non riesce. Un path non rilevato è sospetto e può
-    // nascondere un relay.
+    // FIX: if the loop exhausts without a result, assume 'turn'
+    // (maximum caution) to prevent files >100MB from passing over TURN
+    // when detection fails. An undetected path is suspicious and may
+    // hide a relay.
     let detectedPath: 'direct' | 'turn' | null = null;
     for (let attempt = 0; attempt < 10; attempt++) {
         if (attempt > 0) {
@@ -1196,18 +1196,18 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
         detectedPath = await detectConnectionPath(conn).catch(() => null);
         if (detectedPath) break;
     }
-    // Loop esaurito senza risultato: assumi 'turn' per sicurezza.
+    // Loop exhausted without result: assume 'turn' for safety.
     if (detectedPath === null) {
-        log('⚠️ detectConnectionPath: loop esaurito senza risultato. Assumo TURN per sicurezza.');
+        log('⚠️ detectConnectionPath: loop exhausted without result. Assuming TURN for safety.');
         detectedPath = 'turn';
     }
 
     if (detectedPath === 'turn' && fileInfo.size > turnMaxSize) {
         const errMsg = 'File too large for TURN connection (' + formatSize(fileInfo.size) + ' > ' + formatSize(turnMaxSize) + '). Switch to WiFi or reduce file size.';
         log('TURN size limit exceeded: ' + errMsg);
-        // Telemetria: registra il rifiuto lato backend.
+        // Telemetry: record the rejection on the backend side.
         invoke('record_turn_rejection_cmd').catch(() => { /* best-effort */ });
-        // FIX: imposta il path su 'turn' anche per il badge LED
+        // FIX: also set the path to 'turn' for the LED badge
         connectionPaths.set(uploadKey, 'turn');
         activeUploads.set(uploadKey, {
             hash: fileInfo.hash,
@@ -1492,18 +1492,18 @@ async function finalizeIncomingUpload(conn: DataConnection, upload: IncomingUplo
         // Record as a download (app received the file via inbox)
         addRecentTransfer('download', upload.filename, upload.size);
     } catch (err) {
-        // FIX P0: distingue hash mismatch da errori generici.
-        // Se il backend rifiuta l'upload per integrità, il
-        // file NON è stato salvato in shared-folder/. L'utente
-        // deve sapere esattamente cosa è successo.
+        // FIX P0: distinguishes hash mismatch from generic errors.
+        // If the backend rejects the upload for integrity, the
+        // file was NOT saved to shared-folder/. The user
+        // must know exactly what happened.
         const errMsg = getErrorMessage(err);
         const isHashMismatch = errMsg.toLowerCase().includes('hash mismatch');
         if (isHashMismatch) {
-            log('❌❌ HASH MISMATCH: file rifiutato dal backend per integrità: ' + errMsg);
-            // Notifica di sistema con titolo esplicito
+            log('❌❌ HASH MISMATCH: file rejected by backend for integrity: ' + errMsg);
+            // System notification with explicit title
             showNotification(
-                '❌ Upload RIFIUTATO: hash mismatch',
-                `${upload.filename}: il file ricevuto non corrisponde all'hash dichiarato. NON è stato salvato per garantire integrità.`
+                '❌ Upload REJECTED: hash mismatch',
+                `${upload.filename}: the received file does not match the declared hash. It was NOT saved to ensure integrity.`
             );
             // Messaggio al browser (se P2P-to-Web)
             try {
@@ -1590,10 +1590,10 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                 });
                 updateDownloadProgress(Array.from(activeDownloads.values()));
 
-                // FIX ALTO: unificare i due polling in un unico meccanismo che
-                // sia aggiorni il badge sia determini il percorso per il check
-                // limite. Due polling paralleli sulla stessa connessione potevano
-                // generare race condition su `connectionPaths`.
+                // FIX HIGH: unify the two polling mechanisms into one that
+                // both updates the badge and determines the path for the limit
+                // check. Two parallel polls on the same connection could
+                // generate a race condition on `connectionPaths`.
                 // Poll ICE stats with retries — a single getStats() right after
                 // the connection opens often returns no selected candidate pair.
                 const downloadKey2 = downloadId;
@@ -1695,12 +1695,12 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                             // receivedBytes >= size (see finalizeIncomingUpload).
                             // This prevents the classic "hash mismatch" caused by
                             // finalizing an incomplete file.
-                            // FIX ALTO: semplificiamo la logica. L'auto-finalizzazione
-                            // (riga 1653) è il percorso principale e invia già
-                            // `upload_complete`. Questo gestore è un fallback: se
-                            // l'upload è già stato finalizzato, conferma; altrimenti
-                            // non fa nulla (non invia `upload_complete`) per evitare
-                            // race condition con l'arrivo degli ultimi chunk.
+                            // FIX HIGH: we simplified the logic. Auto-finalization
+                            // (line 1653) is the primary path and already sends
+                            // `upload_complete`. This handler is a fallback: if
+                            // the upload is already finalized, confirm; otherwise
+                            // do nothing (do NOT send `upload_complete`) to avoid
+                            // a race condition with the arrival of the last chunks.
                             log('📥 upload_end received (auto-finalize handles completion)');
                             const upload = incomingUploads.get(conn.peer);
                             if (upload && upload.finalized) {
@@ -1751,10 +1751,10 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                         if (!upload.finalized && upload.receivedBytes >= upload.size) {
                             upload.finalized = true;
                             log('✅ All bytes received (' + upload.receivedBytes + '/' + upload.size + '), auto-finalizing...');
-                            // FIX ALTO: non cancellare incomingUploads PRIMA di finalizeIncomingUpload.
-                            // Se finalize fallisce (es. hash mismatch), l'entry deve rimanere
-                            // per permettere un retry dal browser. finalizeIncomingUpload
-                            // invia già `upload_complete` al browser in caso di successo.
+                            // FIX HIGH: do NOT delete incomingUploads BEFORE finalizeIncomingUpload.
+                            // If finalize fails (e.g. hash mismatch), the entry must remain
+                            // to allow a retry from the browser. finalizeIncomingUpload
+                            // already sends `upload_complete` to the browser on success.
                             await finalizeIncomingUpload(conn, upload);
                             incomingUploads.delete(conn.peer);
                             return;
@@ -2167,13 +2167,13 @@ listen('download-progress', (event) => {
                 recordedDownloadHashes.add(progress.hash);
                 addRecentTransfer('download', progress.filename, progress.total_bytes);
             }
-            // File ricevuto via inbox HTTP: il backend lo ha salvato nella
-            // shared-folder -> aggiorna la lista per mostrarlo subito.
+            // File received via HTTP inbox: backend saved it to
+            // shared-folder -> refresh the list to show it immediately.
             if (progress.peer_ip === 'inbox') loadFiles();
         } else {
             // Add or update the download in the map
             activeDownloads.set(progress.hash, progress);
-            // Trasferimento HTTP del server locale: mai TURN -> LED sempre verde
+            // Local server HTTP transfer: never TURN -> LED always green
             connectionPaths.set(progress.hash, 'direct');
         }
         // Update UI with ALL active downloads
@@ -2199,14 +2199,14 @@ listen('upload-progress', (event) => {
         } else {
             // Add or update the upload in the map
             activeUploads.set(key, progress);
-            // Trasferimento HTTP del server locale: mai TURN -> LED sempre verde
+            // Local server HTTP transfer: never TURN -> LED always green
             connectionPaths.set(key, 'direct');
         }
     }
     // Update UI with ALL active uploads
     renderUploadProgressList();
 }).catch(console.error);
-   
+
     // Polling progress (500ms) - only for HTTP uploads, P2P uploads use activeUploads directly
     const recordedUploadHashes = new Set<string>();
     const recordedDownloadHashes = new Set<string>();
@@ -2231,7 +2231,7 @@ listen('upload-progress', (event) => {
                 // Use unique key: peer_id + '-' + hash
                 const key = (u.peer_id || 'http') + '-' + u.hash;
                 activeUploads.set(key, u);
-                // Trasferimento HTTP del server locale: mai TURN -> LED sempre verde
+                // Local server HTTP transfer: never TURN -> LED always green
                 connectionPaths.set(key, 'direct');
                 // Record completed uploads ONCE (avoid duplicates from polling)
                 if (u.progress === 100 && !recordedUploadHashes.has(key)) {
@@ -2375,8 +2375,8 @@ document.addEventListener('DOMContentLoaded', async () => {
             }
             
             // Remove from active maps
-            // FIX #6: animazione "cancellazione in corso" prima della rimozione,
-            // per dare feedback visivo all'utente e prevenire click multipli.
+            // FIX #6: "cancelling in progress" animation before removal,
+            // to give visual feedback to the user and prevent multiple clicks.
             if (isDownload) {
                 const row = downloadProgressListLeft?.querySelector(
                     `[data-download-id="${CSS.escape(key)}"]`
@@ -2439,7 +2439,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 }
             }
         } catch (error) {
-            console.error('Errore annullamento:', error);
+            console.error('Cancel error:', error);
         }
     });
 });

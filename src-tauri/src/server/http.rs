@@ -213,18 +213,18 @@ async fn list_files_handler(
     Ok(Json(files).into_response())
 }
 
-/// Handler per il download di un file tramite link pubblico (relay)
+/// Handler for file download via public link (relay)
 async fn relay_download_handler(
     Path(link_id): Path<String>,
     State(state): State<Arc<HttpServerState>>,
 ) -> Result<Response, (StatusCode, String)> {
-    // Valida e consuma il link
+    // Validate and consume the link
     let file_hash = {
         let relay = state.relay_manager.lock().await;
         relay.validate_and_consume_link(&link_id).await
     };
 
-    let file_hash = file_hash.ok_or((StatusCode::NOT_FOUND, "Link non valido o scaduto".to_string()))?;
+    let file_hash = file_hash.ok_or((StatusCode::NOT_FOUND, "Invalid or expired link".to_string()))?;
 
     stream_file_response(&state, file_hash, "relay").await
 }
@@ -237,9 +237,9 @@ async fn download_file_handler(
     stream_file_response(&state, hash, "local").await
 }
 
-/// Costruisce la risposta di streaming per un file dato l'hash.
-/// Logica condivisa tra `download_file_handler` (LAN) e
-/// `relay_download_handler` (link pubblico) per evitare duplicazioni.
+/// Builds the streaming response for a file given its hash.
+/// Shared logic between `download_file_handler` (LAN) and
+/// `relay_download_handler` (public link) to avoid duplication.
 async fn stream_file_response(
     state: &Arc<HttpServerState>,
     hash: String,
@@ -305,9 +305,9 @@ async fn stream_file_response(
     Ok((StatusCode::OK, response_headers, body).into_response())
 }
 
-/// Handler per servire la pagina web receiver per il P2P-to-Web.
-/// Resa disponibile su LAN e tramite Cloudflare Tunnel (scatola inversa):
-/// il destinatario apre il link e la pagina si connette in P2P al mittente (no relay server).
+/// Handler for serving the receiver web page for P2P-to-Web.
+/// Available on LAN and via Cloudflare Tunnel (reverse box):
+/// the recipient opens the link and the page connects P2P to the sender (no relay server).
 async fn receiver_page_handler() -> Response {
     let html = include_str!("../../../src/ui/web-receiver.html");
     let mut headers = axum::http::HeaderMap::new();
@@ -328,7 +328,7 @@ async fn inbox_upload_handler(
     {
         let relay = state.relay_manager.lock().await;
         if relay.get_inbox(&inbox_id).await.is_none() {
-            return Err((StatusCode::NOT_FOUND, "Scatola di consegna inversa non valida o scaduta".to_string()));
+            return Err((StatusCode::NOT_FOUND, "Invalid or expired reverse delivery box".to_string()));
         }
     }
 
@@ -548,8 +548,8 @@ pub fn create_router(state: Arc<HttpServerState>) -> Router {
         // Probe di raggiungibilità LAN: usata dalla pagina receiver per capire
         // se il ricevente è sulla stessa rete del mittente (fallback HTTP diretto)
         .route("/ping", get(ping_handler))
-        // Pagina web receiver per P2P-to-Web (Genera Link Web / Scatola inversa)
-        // Servita alla root "/" per funzionare con Netlify
+        // Receiver web page for P2P-to-Web (Generate Web Link / Reverse Box)
+        // Served at root "/" to work with Netlify
         .route("/", get(receiver_page_handler))
         .route("/receiver", get(receiver_page_handler))
         // Timeout per connessioni lente (5 minuti)
@@ -559,17 +559,17 @@ pub fn create_router(state: Arc<HttpServerState>) -> Router {
         .with_state(state)
 }
 
-/// Pagina di upload della Scatola di Consegna Inversa LOCALE (HTTP puro).
-/// Il browser invia il file con una POST diretta a /inbox/{id}?filename=...
-/// Nessun signaling PeerJS e nessun TURN: funziona anche su LAN isolate.
-/// Il placeholder {INBOX_ID} viene sostituito dall'handler (niente format!,
-/// per evitare conflitti con le graffe di CSS/JavaScript).
+/// Local Reverse Delivery Box upload page (pure HTTP).
+/// The browser sends the file via a direct POST to /inbox/{id}?filename=...
+/// No PeerJS signaling and no TURN: works even on an isolated LAN.
+/// The {INBOX_ID} placeholder is replaced by the handler (no format!,
+/// to avoid conflicts with CSS/JavaScript curly braces).
 const INBOX_UPLOAD_PAGE: &str = r#"<!DOCTYPE html>
-<html lang="it">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Peerino - Invia un file</title>
+<title>Peerino - Send a file</title>
 <style>
   :root { --bg0:#070B14; --panel:rgba(20,30,55,.72); --border:rgba(56,189,248,.18);
           --text:#e2e8f0; --dim:#94a3b8; --accent:#38bdf8; --green:#22c55e; --red:#ef4444; }
@@ -601,18 +601,18 @@ const INBOX_UPLOAD_PAGE: &str = r#"<!DOCTYPE html>
 </head>
 <body>
 <div class="card">
-  <h1>Invia un file a Peerino</h1>
-  <p class="sub">Trasferimento diretto sulla rete locale: il file va dal tuo dispositivo
-     a Peerino senza passare da alcun server esterno.</p>
+  <h1>Send a file to Peerino</h1>
+  <p class="sub">Direct transfer on the local network: the file goes from your device
+     to Peerino without passing through any external server.</p>
   <div class="drop" id="drop">
     <span class="icon">&#128206;</span>
-    <span>Trascina qui un file oppure clicca per selezionarlo</span>
+    <span>Drag a file here or click to select it</span>
   </div>
   <input type="file" id="file" hidden />
   <div class="fname" id="fname"></div>
-  <button id="send" disabled>Invia file</button>
-  <!-- FIX #7: pulsante Annulla per interrompere l'upload in corso -->
-  <button id="cancel" style="display:none;background:var(--red);">Annulla upload</button>
+  <button id="send" disabled>Send file</button>
+  <!-- FIX #7: Cancel button to stop the active upload -->
+  <button id="cancel" style="display:none;background:var(--red);">Cancel upload</button>
   <div class="bar-wrap" id="barwrap"><div class="bar" id="bar"></div></div>
   <div class="status" id="status"></div>
 </div>
@@ -659,11 +659,11 @@ const INBOX_UPLOAD_PAGE: &str = r#"<!DOCTYPE html>
   var cancelBtn = document.getElementById('cancel');
   sendBtn.addEventListener('click', function () {
     if (!selectedFile) return;
-    // Calcola l'hash SHA-256 del file PRIMA dell'upload per usarlo come
-    // chiave di cancellazione coerente con il backend (param ?hash=...)
+    // Compute the SHA-256 hash of the file BEFORE uploading, to use it as
+    // a deletion key consistent with the backend (?hash=... param)
     var fileHash = '';
     try {
-      // Usa SubtleCrypto se disponibile (richiede HTTPS o localhost)
+      // Use SubtleCrypto if available (requires HTTPS or localhost)
       var reader = new FileReader();
       reader.onload = function (e) {
         var buf = e.target.result;
@@ -682,7 +682,7 @@ const INBOX_UPLOAD_PAGE: &str = r#"<!DOCTYPE html>
         }
       };
       reader.readAsArrayBuffer(selectedFile);
-      return; // l'upload parte dentro il callback
+      return; // the upload starts inside the callback
     } catch (err) {
       startUpload('');
       return;
@@ -700,14 +700,14 @@ const INBOX_UPLOAD_PAGE: &str = r#"<!DOCTYPE html>
       cancelBtn.style.display = 'block';
       barwrap.style.display = 'block';
       statusEl.className = 'status';
-      statusEl.textContent = 'Caricamento in corso...';
+      statusEl.textContent = 'Uploading...';
 
-      // FIX #7: gestione annullamento via xhr.abort()
+      // FIX #7: cancellation handling via xhr.abort()
       cancelBtn.onclick = function () {
         if (xhr.readyState !== XMLHttpRequest.DONE) {
           xhr.abort();
           statusEl.className = 'status err';
-          statusEl.textContent = '⏹ Upload annullato.';
+          statusEl.textContent = '⏹ Upload cancelled.';
           sendBtn.disabled = false;
           sendBtn.style.display = 'block';
           cancelBtn.style.display = 'none';
@@ -720,7 +720,7 @@ const INBOX_UPLOAD_PAGE: &str = r#"<!DOCTYPE html>
           var secs = (Date.now() - t0) / 1000;
           var mbps = secs > 0 ? (e.loaded / 1048576) / secs : 0;
           bar.style.width = pct + '%';
-          statusEl.textContent = 'Caricamento... ' + pct + '% - ' + mbps.toFixed(1) + ' MB/s';
+          statusEl.textContent = 'Uploading... ' + pct + '% - ' + mbps.toFixed(1) + ' MB/s';
         }
       });
       xhr.addEventListener('load', function () {
@@ -729,19 +729,19 @@ const INBOX_UPLOAD_PAGE: &str = r#"<!DOCTYPE html>
         if (xhr.status === 200) {
           bar.style.width = '100%';
           statusEl.className = 'status ok';
-          statusEl.textContent = 'File inviato correttamente a Peerino.';
+          statusEl.textContent = 'File sent successfully to Peerino.';
         } else {
           statusEl.className = 'status err';
-          statusEl.textContent = 'Errore ' + xhr.status + ': ' + (xhr.responseText || 'upload fallito');
+          statusEl.textContent = 'Error ' + xhr.status + ': ' + (xhr.responseText || 'upload failed');
           sendBtn.disabled = false;
         }
       });
       xhr.addEventListener('error', function () {
         sendBtn.style.display = 'block';
         cancelBtn.style.display = 'none';
-        if (xhr.readyState === XMLHttpRequest.UNSENT) return; // abort già gestito
+        if (xhr.readyState === XMLHttpRequest.UNSENT) return; // abort already handled
         statusEl.className = 'status err';
-        statusEl.textContent = 'Errore di rete durante il caricamento.';
+        statusEl.textContent = 'Network error during upload.';
         sendBtn.disabled = false;
       });
       xhr.addEventListener('abort', function () {
@@ -749,8 +749,8 @@ const INBOX_UPLOAD_PAGE: &str = r#"<!DOCTYPE html>
         cancelBtn.style.display = 'none';
       });
 
-      // Corpo della richiesta = file grezzo (streaming lato server),
-      // il nome file viaggia nella query string come atteso dall'handler.
+      // Request body = raw file (server-side streaming),
+      // the filename travels in the query string as expected by the handler.
       xhr.open('POST', url);
       xhr.send(selectedFile);
     }
@@ -760,11 +760,11 @@ const INBOX_UPLOAD_PAGE: &str = r#"<!DOCTYPE html>
 </body>
 </html>"#;
 
-/// Handler per /ping GET - pagina minimale per il probe di raggiungibilità LAN.
-/// La pagina receiver apre questo endpoint in un tab di sfondo: qui facciamo
-/// postMessage('pong') verso l'opener (cross-origin, consentito) così chi ha
-/// aperto il link sa di essere sulla stessa rete del mittente e può usare il
-/// trasferimento HTTP diretto invece di WebRTC.
+/// Handler for /ping GET - minimal page for the LAN reachability probe.
+/// The receiver page opens this endpoint in a background tab: here we send
+/// postMessage('pong') to the opener (cross-origin, allowed) so that whoever
+/// opened the link knows they are on the same network as the sender and can
+/// use direct HTTP transfer instead of WebRTC.
 async fn ping_handler() -> Response {
     let html = r#"<!DOCTYPE html>
 <html><body style="background:#070B14;color:#94a3b8;font-family:sans-serif;text-align:center;padding-top:40px">
@@ -782,8 +782,8 @@ async fn ping_handler() -> Response {
         .into_response()
 }
 
-/// Handler per /inbox/:inbox_id GET - serve la pagina di upload HTTP pura.
-/// L'id viene validato (404 se scaduto/inesistente), coerente con la POST.
+/// Handler for /inbox/:inbox_id GET - serves the pure HTTP upload page.
+/// The ID is validated (404 if expired/non-existent), consistent with the POST.
 async fn inbox_page_handler(
     Path(inbox_id): Path<String>,
     State(state): State<Arc<HttpServerState>>,
@@ -791,7 +791,7 @@ async fn inbox_page_handler(
     {
         let relay = state.relay_manager.lock().await;
         if relay.get_inbox(&inbox_id).await.is_none() {
-            return Err((StatusCode::NOT_FOUND, "Scatola di consegna inversa non valida o scaduta".to_string()));
+            return Err((StatusCode::NOT_FOUND, "Invalid or expired reverse delivery box".to_string()));
         }
     }
     let html = INBOX_UPLOAD_PAGE.replace("{INBOX_ID}", &inbox_id);
@@ -800,14 +800,14 @@ async fn inbox_page_handler(
     Ok((StatusCode::OK, headers, html).into_response())
 }
 
-/// Avvia il server HTTP con un listener già bindato.
-/// Il binding avviene dal chiamante (start_http_server) in modo che gli errori
+/// Starts the HTTP server with an already-bound listener.
+/// Binding is done by the caller (start_http_server) so that bind errors
 /// di bind vengano restituiti sincronamente invece di essere nascosti nel task.
 pub async fn start_server(state: Arc<HttpServerState>, listener: tokio::net::TcpListener) -> Result<(), String> {
     let addr = listener.local_addr()
-        .map_err(|e| format!("Impossibile leggere l'indirizzo del listener: {}", e))?;
+        .map_err(|e| format!("Failed to read l'indirizzo del listener: {}", e))?;
     
-    log::info!("🌐 Server HTTP avviato su http://{}", addr);
+    log::info!("🌐 HTTP server started at http://{}", addr);
     
     axum::serve(listener, create_router(state))
         .await

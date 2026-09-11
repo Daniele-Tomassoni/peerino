@@ -511,14 +511,14 @@
             // ICE servers from the link (env-driven): comma separated lists
             const stunUrlsParam = params.get('stunUrls');
             const turnUrlsParam = params.get('turnUrls');
-            // ICE unificato (provider-agnostic): base64 di JSON array WebRTC standard.
-            // Quando presente, ha priorità su stunUrls/turnUrls/turnUser/turnPass.
+            // Unified ICE (provider-agnostic): base64 of standard WebRTC JSON array.
+            // When present, takes priority over stunUrls/turnUrls/turnUser/turnPass.
             // Formato: [{ urls: 'turn:...', username: '...', credential: '...' }, ...]
             const iceParam = params.get('ice');
-            // Indirizzo del server HTTP locale del mittente (fallback LAN)
-            // Se la pagina è caricata dal server locale (HTTP), usa window.location.origin
-            // come base LAN (la pagina è già same-origin con il server).
-            // Altrimenti, usa il parametro 'lan' dal link (per pagine caricate da Netlify).
+            // Address of the sender's local HTTP server (LAN fallback)
+            // If the page is loaded from the local server (HTTP), use window.location.origin
+            // as the LAN base (the page is already same-origin with the server).
+            // Otherwise, use the 'lan' parameter from the link (for pages loaded from Netlify).
             const isLocalPage = window.location.protocol === 'http:' &&
                                !window.location.hostname.includes('netlify.app') &&
                                !window.location.hostname.includes('peerino.com');
@@ -526,21 +526,21 @@
                 ? window.location.origin
                 : (params.get('lan') || '').replace(/\/+$/, '');
 
-            // Decidi in anticipo se la LAN e davvero raggiungibile.
-            // Mixed content (HTTPS->HTTP verso IP privato) viene bloccato dal
-            // browser in modo asincrono: il fetch attende il timeout TCP (~5s)
-            // prima di fallire. Riconosciamo subito il caso e skipp la LAN.
-            // Regola: la LAN e raggiungibile SOLO se la pagina e servita
-            // dal server locale (isLocalPage). Altrimenti il fetch verso
-            // un IP privato da una pagina HTTPS verra bloccato.
+            // Decide upfront whether the LAN is truly reachable.
+            // Mixed content (HTTPS->HTTP to private IP) is blocked by the
+            // browser asynchronously: the fetch waits for the TCP timeout (~5s)
+            // before failing. We detect this case immediately and skip the LAN.
+            // Rule: the LAN is reachable ONLY if the page is served from the
+            // local server (isLocalPage). Otherwise, the fetch to a private IP
+            // from an HTTPS page will be blocked.
             const isLanReachable = isLocalPage;
 
             const isInbox = (mode === 'inbox' || window.location.pathname.startsWith('/inbox/'));
 
-            // FIX ALTO: limite TURN configurabile via link (&turnMax=).
-            // Fallback al hardcoded 104857600 (100MB) se assente o non valido.
-            // Questo garantisce che browser e backend siano sempre sincronizzati,
-            // anche se il limite viene cambiato via env (TURN_MAX_FILE_SIZE).
+            // FIX HIGH: TURN limit configurable via link (&turnMax=).
+            // Falls back to hardcoded 104857600 (100MB) if absent or invalid.
+            // This ensures browser and backend stay always in sync,
+            // even if the limit is changed via env (TURN_MAX_FILE_SIZE).
             const turnMaxParam = params.get('turnMax');
             let TURN_MAX_FILE_SIZE = 104857600; // default 100MB
             if (turnMaxParam) {
@@ -638,7 +638,7 @@
             // Kept for backward compatibility — no-op.
             function openLanProbe() { return null; }
 
-            // Rileva il percorso ICE vincente via getStats e aggiorna lo stepper
+            // Detect the winning ICE path via getStats and update the stepper
             function detectAndMarkPath(conn) {
                 const pc = conn.peerConnection || (conn._pc) || null;
                 if (!pc) return;
@@ -701,15 +701,15 @@
                 }, 1000);
             }
 
-            // ===== START DOWNLOAD FLOW (conferma utente + race LAN/WebRTC) =====
+            // ===== START DOWNLOAD FLOW (user confirm + LAN/WebRTC race) =====
             async function startDownloadFlow() {
                 startBtn.disabled = true;
                 setHeaderBadge('Connecting...');
                 showDetecting();
                 showPhases();
-                // Determina subito la fase iniziale: se la LAN non e raggiungibile
-                // (pagina HTTPS + IP privato = mixed content bloccato), skip
-                // direttamente a STUN senza attendere il timeout TCP (~5s).
+                // Determine the initial phase immediately: if the LAN is not reachable
+                // (HTTPS page + private IP = mixed content blocked), skip
+                // directly to STUN without waiting for the TCP timeout (~5s).
                 if (lanBase && isLanReachable) { setPhase('lan', 'active'); } else { setPhase('stun', 'active'); }
 
                 // Try LAN download only when the LAN is actually reachable
@@ -749,7 +749,7 @@
                 }
 
                 hideDetecting();
-                // Avvia WebRTC dopo che il probe LAN si concluso
+                // Start WebRTC after the LAN probe completes
                 connectToSender(senderPeerId);
             }
 
@@ -772,7 +772,7 @@
                     setStatus('Select a file and press Upload.', '');
                     log('📤 Inbox mode activated.');
                 } else {
-                    // MODE: DOWNLOAD — schermata di conferma prima della connessione
+                    // MODE: DOWNLOAD — confirmation screen before connection
                     pageTitle.textContent = '📥 File ready';
                     pageBadge.textContent = 'Download';
                     downloadUI.classList.add('active');
@@ -797,17 +797,17 @@
             }
 
             // ===== ICE CONFIG FROM LINK PARAMS =====
-            // Costruisce iceServers da stunUrls/turnUrls/turnUser/turnPass nel link.
-            // Nessun server hardcoded: la configurazione arriva dall'env del mittente.
+            // Builds iceServers from stunUrls/turnUrls/turnUser/turnPass in the link.
+            // No hardcoded server: configuration comes from the sender's env.
             function splitUrlList(raw) {
                 return (raw || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
             }
 
             function buildIceServers() {
-                // Provider TURN unificato: se il link include &ice=<base64-JSON>,
-                // decodifica e usa direttamente l'array (formato WebRTC standard).
-                // Supporta QUALSIASI provider TURN (metered, coturn self-hosted, misto)
-                // perché il backend ha già fatto il fetch server-side.
+                // Unified TURN provider: if the link includes &ice=<base64-JSON>,
+                // decode and use the array directly (standard WebRTC format).
+                // Supports ANY TURN provider (metered, coturn self-hosted, mixed)
+                // because the backend has already done the server-side fetch.
                 if (iceParam) {
                     try {
                         const json = atob(iceParam);
@@ -827,7 +827,7 @@
                 if (stuns.length > 0) {
                     stuns.forEach(function (u) { ice.push({ urls: u }); });
                 } else {
-                    // Fallback STUN pubblico se il link non specifica nulla
+                    // Public STUN fallback if the link specifies nothing
                     ice.push({ urls: 'stun:stun.l.google.com:19302' });
                 }
                 if (turnUser && turnPass) {
@@ -1282,8 +1282,8 @@
                uploadBtn.disabled = true;
                showDetecting();
                showPhases();
-               // Determina subito la fase iniziale: se la LAN non e raggiungibile,
-               // skip direttamente a STUN senza attendere il timeout TCP.
+               // Determine the initial phase immediately: if the LAN is not reachable,
+               // skip directly to STUN without waiting for the TCP timeout.
                if (lanBase && isLanReachable) { setPhase('lan', 'active'); } else { setPhase('stun', 'active'); }
 
                // FIX: Start hash computation IMMEDIATELY (in parallel with LAN
