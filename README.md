@@ -1,6 +1,6 @@
 # Peerino
 
-**P2P file sharing senza cloud, senza account, senza intermediari.**
+**P2P file sharing without cloud, without accounts, without intermediaries.**
 
 Peerino è un'applicazione desktop open source per la condivisione di file
 peer-to-peer. Invia un file a chiunque tramite un semplice link — il
