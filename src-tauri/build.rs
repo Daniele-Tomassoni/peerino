@@ -1,11 +1,15 @@
 fn main() {
-    // Disables Windows resource generation if the icon does not exist
+    let mut attributes = tauri_build::Attributes::new();
+
     #[cfg(windows)]
     {
-        let icon_path = std::path::Path::new("src-tauri/icons/icon.ico");
-        if !icon_path.exists() {
-            // Don't run the windows-resource build script if the icon is missing
-            println!("cargo:rustc-cfg=skip_windows_resources");
-        }
+        // Use our custom manifest to ensure Common Controls v6 support,
+        // which fixes STATUS_ENTRYPOINT_NOT_FOUND (TaskDialogIndirect).
+        attributes = attributes.windows_attributes(
+            tauri_build::WindowsAttributes::new()
+                .app_manifest(include_str!("windows-app.manifest")),
+        );
     }
+
+    tauri_build::try_build(attributes).expect("tauri-build failed");
 }
