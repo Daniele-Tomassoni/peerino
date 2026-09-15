@@ -183,3 +183,11 @@ project-context.md
 peerino.md
 roadmap*.pdf
 *.pdf
+
+# ==============================================================
+# AGENTE DI SVILUPPO (non tracciare)
+# ==============================================================
+.roo/
+.cursor/
+.aider*
+.continue/
