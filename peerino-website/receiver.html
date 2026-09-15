@@ -878,12 +878,8 @@
                         document.body.removeChild(a);
                         setTimeout(() => URL.revokeObjectURL(url), 5000);
                         setStatus('✅ Download completed!', 'success');
-                        return;
-#######
                         log('✅ File downloaded via LAN HTTP');
                         showPeerinoCta('download');
-                        return;
-#######
                         return;
                     } catch (fetchErr) {
                         log('⚠️ LAN fetch failed, falling back to WebRTC: ' + fetchErr.message);
@@ -1174,7 +1170,6 @@
                 downloadBtn.classList.remove('show');
                 showPeerinoCta('download');
             });
-#######
 
             // ===== UPLOAD (Inbox) =====
             uploadZone.addEventListener('click', () => fileInput.click());
@@ -1300,23 +1295,11 @@
                    conn.on('data', (data) => {
                        if (typeof data === 'string') {
                            try {
-                               if (msg.type === 'upload_accepted') {
-                                   log('✅ Upload accepted by sender, starting send...');
-                                   setStatus('📤 Sending file...', 'loading');
-                                   sendFileChunks(conn, selectedFile);
-                               } else if (msg.type === 'upload_complete') {
-#######
                                const msg = JSON.parse(data);
                                if (msg.type === 'upload_accepted') {
                                    log('✅ Upload accepted by sender, starting send...');
                                    setStatus('📤 Sending file...', 'loading');
                                    showPeerinoCta('upload');
-                                   sendFileChunks(conn, selectedFile);
-                               } else if (msg.type === 'upload_complete') {
-#######
-                               if (msg.type === 'upload_accepted') {
-                                   log('✅ Upload accepted by sender, starting send...');
-                                   setStatus('📤 Sending file...', 'loading');
                                    sendFileChunks(conn, selectedFile);
                                } else if (msg.type === 'upload_complete') {
                                    log('✅ File saved successfully!');
@@ -1483,12 +1466,8 @@
                        }
                        setPhase('lan', 'done');
                        const result = await response.json();
-                       log('✅ File uploaded via LAN HTTP: ' + (result.filename || selectedFile.name));
-#######
                        setStatus('✅ File uploaded successfully!', 'success');
                        showPeerinoCta('upload');
-                       log('✅ File uploaded via LAN HTTP: ' + (result.filename || selectedFile.name));
-#######
                        log('✅ File uploaded via LAN HTTP: ' + (result.filename || selectedFile.name));
                        uploadFilenameDisplay.textContent = 'No file selected';
                        selectedFile = null;
