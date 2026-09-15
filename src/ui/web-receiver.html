@@ -420,7 +420,7 @@
         <!-- PHASES: connection path (LAN -> STUN -> TURN) -->
         <div id="phases" class="phases">
             <div class="phase" id="phase-lan"><span class="dot"></span>🏠 Local network</div>
-            <div class="phase" id="phase-stun"><span class="dot"></span>🌏 Direct internet</div>
+            <div class="phase" id="phase-stun"><span class="dot"></span>🌐 Direct internet</div>
             <div class="phase" id="phase-turn"><span class="dot"></span>🔄 Relay server</div>
         </div>
 
@@ -431,7 +431,7 @@
 
         <!-- DOWNLOAD UI -->
         <div id="download-ui" class="download-ui">
-            <button id="startBtn" class="start-btn">⬇ Start download</button>
+            <button id="startBtn" class="start-btn">📥 Start download</button>
             <div id="progress-container" class="progress-container">
                 <div class="progress-bar">
                     <div id="progress-fill" class="progress-fill" style="width:0%"></div>
@@ -727,7 +727,7 @@
                 if (lanBase && isLanReachable) {
                     setStatus('🟢 Trying local network download...', 'success');
                     const downloadUrl = lanBase + '/download/' + encodeURIComponent(fileHash || '');
-                    log('⬇ Fetching file from local server: ' + downloadUrl);
+                    log('📥 Fetching file from local server: ' + downloadUrl);
                     try {
                         const controller = new AbortController();
                         const fetchTimeout = setTimeout(() => controller.abort(), 1500);
@@ -791,9 +791,9 @@
                         // in the URL and add nothing for the receiver.
                         if (filenameParam) {
                             log(`📎 File: ${filenameParam}`);
-                            startBtn.textContent = `⬇ Download "${filenameParam}"`;
+                            startBtn.textContent = `📥 Download "${filenameParam}"`;
                         } else {
-                            startBtn.textContent = '⬇ Start download';
+                            startBtn.textContent = '📥 Start download';
                         }
                         setStatus('Press the button to start the secure download.', '');
                     } else {
@@ -821,7 +821,7 @@
                         const json = atob(iceParam);
                         const decoded = JSON.parse(json);
                         if (Array.isArray(decoded) && decoded.length > 0) {
-                            log(`🧊 Using unified ICE provider: ${decoded.length} server(s)`);
+                            log(`📡 Using unified ICE provider: ${decoded.length} server(s)`);
                             return decoded;
                         }
                     } catch (e) {
@@ -924,8 +924,8 @@
 
                     connection.on('close', () => {
                         if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
-                        log('🔌 Connection closed');
-                        setStatus('🔌 Connection closed by sender.', 'error');
+                        log('Connection closed');
+                        setStatus('Connection closed by sender.', 'error');
                         downloadBtn.classList.remove('show');
                     });
 
@@ -1206,7 +1206,7 @@
                    });
 
                    conn.on('close', () => {
-                       log('🔌 Connection closed');
+                       log('Connection closed');
                    });
 
                    conn.on('error', (err) => {

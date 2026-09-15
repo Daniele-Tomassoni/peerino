@@ -638,7 +638,7 @@ function addRecentTransfer(type: 'upload' | 'download', filename: string, size: 
 }
 
 function renderRecentItem(t: TransferRecord, now: number, twoMin: number): string {
-    const icon = t.type === 'upload' ? '⬆️' : '⬇️';
+    const icon = t.type === 'upload' ? '📤' : '📥';
     const label = t.type === 'upload' ? 'Upload' : 'Download';
     const time = new Date(t.timestamp).toLocaleTimeString('it-IT', {
         hour: '2-digit', minute: '2-digit', second: '2-digit'
