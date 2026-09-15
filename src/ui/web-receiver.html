@@ -445,6 +445,50 @@
                 padding: 30px 16px;
             }
         }
+        /* ===== PEERINO CTA ===== */
+        .peerino-cta {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            margin-top: 10px;
+            background: rgba(56, 189, 248, 0.08);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            border-radius: var(--radius-sm);
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            animation: ctaFadeIn 0.4s ease;
+        }
+
+        .peerino-cta.hidden {
+            display: none;
+        }
+
+        .peerino-cta-icon {
+            font-size: 1.1rem;
+            flex-shrink: 0;
+        }
+
+        .peerino-cta-text {
+            flex: 1;
+            line-height: 1.4;
+        }
+
+        .peerino-cta-link {
+            color: var(--accent);
+            text-decoration: none;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .peerino-cta-link:hover {
+            text-decoration: underline;
+        }
+
+        @keyframes ctaFadeIn {
+            from { opacity: 0; transform: translateY(4px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
 </head>
 <body>
@@ -495,6 +539,15 @@
                 </div>
                 <div id="progress-text" class="progress-text">0%</div>
             </div>
+            <div id="peerino-cta-download" class="peerino-cta hidden">
+                <span class="peerino-cta-icon">💡</span>
+                <span class="peerino-cta-text">
+                    Enjoying Peerino?
+                    <a href="https://peerino.com" target="_blank" rel="noopener" class="peerino-cta-link">
+                        Get the desktop app →
+                    </a>
+                </span>
+            </div>
             <button id="downloadBtn" class="download-btn">💾 Save the file</button>
         </div>
 
@@ -507,6 +560,15 @@
                 <input type="file" id="fileInput">
             </div>
             <button id="uploadBtn" class="upload-btn">📤 Upload file</button>
+            <div id="peerino-cta-upload" class="peerino-cta hidden">
+                <span class="peerino-cta-icon">💡</span>
+                <span class="peerino-cta-text">
+                    Enjoying Peerino?
+                    <a href="https://peerino.com" target="_blank" rel="noopener" class="peerino-cta-link">
+                        Get the desktop app →
+                    </a>
+                </span>
+            </div>
         </div>
 
         <!-- LOG -->
@@ -661,6 +723,18 @@
             // Dynamic header badge (pageBadge already declared above)
             function setHeaderBadge(text) { if (pageBadge) pageBadge.textContent = text; }
 
+            // ===== PEERINO CTA =====
+            // Mostra il CTA "Enjoying Peerino? Get the desktop app →"
+            // una sola volta per trasferimento, solo quando il trasferimento
+            // è confermato (download completato o upload accettato dal sender).
+            function showPeerinoCta(mode) {
+                const ctaId = mode === 'download' ? 'peerino-cta-download' : 'peerino-cta-upload';
+                const cta = document.getElementById(ctaId);
+                if (cta && cta.classList.contains('hidden')) {
+                    cta.classList.remove('hidden');
+                }
+            }
+
             // Speed/ETA for progress
             function formatSpeed(bytesPerSec) {
                 if (!bytesPerSec || bytesPerSec <= 0) return '0 MB/s';
@@ -804,7 +878,12 @@
                         document.body.removeChild(a);
                         setTimeout(() => URL.revokeObjectURL(url), 5000);
                         setStatus('✅ Download completed!', 'success');
+                        return;
+#######
                         log('✅ File downloaded via LAN HTTP');
+                        showPeerinoCta('download');
+                        return;
+#######
                         return;
                     } catch (fetchErr) {
                         log('⚠️ LAN fetch failed, falling back to WebRTC: ' + fetchErr.message);
@@ -1093,7 +1172,9 @@
                 setTimeout(() => URL.revokeObjectURL(url), 5000);
                 setStatus('✅ Download completed!', 'success');
                 downloadBtn.classList.remove('show');
+                showPeerinoCta('download');
             });
+#######
 
             // ===== UPLOAD (Inbox) =====
             uploadZone.addEventListener('click', () => fileInput.click());
@@ -1219,7 +1300,20 @@
                    conn.on('data', (data) => {
                        if (typeof data === 'string') {
                            try {
+                               if (msg.type === 'upload_accepted') {
+                                   log('✅ Upload accepted by sender, starting send...');
+                                   setStatus('📤 Sending file...', 'loading');
+                                   sendFileChunks(conn, selectedFile);
+                               } else if (msg.type === 'upload_complete') {
+#######
                                const msg = JSON.parse(data);
+                               if (msg.type === 'upload_accepted') {
+                                   log('✅ Upload accepted by sender, starting send...');
+                                   setStatus('📤 Sending file...', 'loading');
+                                   showPeerinoCta('upload');
+                                   sendFileChunks(conn, selectedFile);
+                               } else if (msg.type === 'upload_complete') {
+#######
                                if (msg.type === 'upload_accepted') {
                                    log('✅ Upload accepted by sender, starting send...');
                                    setStatus('📤 Sending file...', 'loading');
@@ -1389,7 +1483,12 @@
                        }
                        setPhase('lan', 'done');
                        const result = await response.json();
+                       log('✅ File uploaded via LAN HTTP: ' + (result.filename || selectedFile.name));
+#######
                        setStatus('✅ File uploaded successfully!', 'success');
+                       showPeerinoCta('upload');
+                       log('✅ File uploaded via LAN HTTP: ' + (result.filename || selectedFile.name));
+#######
                        log('✅ File uploaded via LAN HTTP: ' + (result.filename || selectedFile.name));
                        uploadFilenameDisplay.textContent = 'No file selected';
                        selectedFile = null;
