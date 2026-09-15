@@ -72,11 +72,14 @@ pub async fn generate_web_link(
     }
 
     // 4. Determine the base URL of the receiver page.
-    // Uses P2P_WEB_URL (Netlify) as the base URL: reachable from the internet.
+    // Uses P2P_WEB_URL (env) as the base URL: reachable from the internet.
     // The LAN fallback is attempted via the 'lan=' parameter added below.
     let page_base = std::env::var("P2P_WEB_URL")
         .map(|u| u.trim_end_matches('/').to_string())
-        .unwrap_or_else(|_| "https://courageous-crisp-cff298.netlify.app".to_string());
+        .unwrap_or_else(|_| {
+            log::warn!("P2P_WEB_URL not set, using fallback to peerino.com");
+            "https://peerino.com".to_string()
+        });
 
     // 5. Build the link with explicit mode, peerId, hash and filename (URL encoded)
     let encoded_filename = encode(&file_info.filename);

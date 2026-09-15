@@ -48,7 +48,7 @@ pub async fn create_inbox(state: State<'_, AppState>) -> Result<String, String> 
         relay.create_inbox().await.map_err(|e| e.to_string())?
     };
 
-    // Use P2P_WEB_URL (Netlify) as the base URL: reachable from the internet.
+    // Use P2P_WEB_URL (env) as the base URL: reachable from the internet.
     // The LAN fallback is attempted via the 'lan=' parameter added below:
     // - If sender and receiver are on the same network, the browser will try
     //   fetching the local server but it may be blocked by mixed content
@@ -56,7 +56,10 @@ pub async fn create_inbox(state: State<'_, AppState>) -> Result<String, String> 
     // - The 'lan=' parameter does not break anything: it is just an optimistic attempt.
     let page_base = std::env::var("P2P_WEB_URL")
         .map(|u| u.trim_end_matches('/').to_string())
-        .unwrap_or_else(|_| "https://courageous-crisp-cff298.netlify.app".to_string());
+        .unwrap_or_else(|_| {
+            log::warn!("P2P_WEB_URL not set, using fallback to peerino.com");
+            "https://peerino.com".to_string()
+        });
 
     // Build the link with mode=inbox and peerId (for WebRTC connection)
     let mut link = format!(
