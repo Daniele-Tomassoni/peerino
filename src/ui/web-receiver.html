@@ -418,6 +418,21 @@
             text-align: center;
         }
 
+        /* ===== LEGAL DISCLAIMER ===== */
+        .legal-disclaimer {
+            font-size: 0.7rem;
+            color: var(--text-dim);
+            text-align: center;
+            padding: 8px 16px;
+            line-height: 1.4;
+            border-top: 1px solid var(--panel-border);
+            margin-top: 8px;
+        }
+
+        .legal-disclaimer strong {
+            color: var(--text);
+        }
+
         /* ===== RESPONSIVE ===== */
         @media (max-width: 480px) {
             .container {
@@ -450,6 +465,13 @@
         <!-- DETECTING STATUS -->
         <div id="detecting-status" class="detecting-status" style="display:none;">
             <span class="spinner"></span> Detecting best connection path...
+        </div>
+
+        <!-- LEGAL DISCLAIMER -->
+        <div class="legal-disclaimer">
+            ⚠️ <strong>Disclaimer:</strong> You are solely responsible for the files
+            you share or download. Only open links from people you trust. Peerino does
+            not host, store, or moderate any files.
         </div>
 
         <!-- PHASES: connection path (LAN -> STUN -> TURN) -->

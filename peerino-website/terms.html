@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Terms of Service — Peerino</title>
+    <meta name="description" content="Peerino Terms of Service">
+    <style>
+        :root {
+            --bg-0: #070B14;
+            --bg-1: #16213E;
+            --panel: rgba(20, 30, 55, 0.72);
+            --panel-border: rgba(56, 189, 248, 0.18);
+            --text: #e2e8f0;
+            --text-dim: #94a3b8;
+            --accent: #38bdf8;
+            --accent-2: #22d3ee;
+            --radius-md: 12px;
+            --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+            --gradient-angle: 160deg;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background:
+                radial-gradient(circle at 50% 35%, rgba(34, 211, 238, 0.12), transparent 55%),
+                linear-gradient(var(--gradient-angle), var(--bg-0) 0%, var(--bg-1) 100%);
+            background-attachment: fixed;
+            color: var(--text);
+            line-height: 1.7;
+            padding: 40px 20px;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 720px;
+            margin: 0 auto;
+            background: var(--panel);
+            border: 1px solid var(--panel-border);
+            border-radius: var(--radius-md);
+            padding: 40px;
+            box-shadow: var(--shadow-md);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 8px;
+        }
+        .subtitle {
+            color: var(--text-dim);
+            font-size: 0.9rem;
+            margin-bottom: 32px;
+        }
+        h2 {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: var(--accent);
+            margin-top: 32px;
+            margin-bottom: 12px;
+        }
+        p, ul {
+            color: var(--text);
+            margin-bottom: 16px;
+        }
+        ul { padding-left: 24px; }
+        li { margin-bottom: 8px; }
+        a {
+            color: var(--accent);
+            text-decoration: none;
+        }
+        a:hover { text-decoration: underline; }
+        .back-link {
+            display: inline-block;
+            margin-top: 32px;
+            color: var(--text-dim);
+            font-size: 0.9rem;
+        }
+        @media (max-width: 480px) {
+            .container { padding: 24px 20px; }
+            h1 { font-size: 1.5rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Terms of Service</h1>
+        <p class="subtitle">Last updated: September 2026</p>
+
+        <h2>1. What Peerino Is</h2>
+        <p>
+            Peerino is a <strong>peer-to-peer file sharing tool</strong>. It does not
+            host, store, or moderate any files. All transfers happen directly between
+            users, without passing through our servers.
+        </p>
+
+        <h2>2. Your Responsibility</h2>
+        <p>You are solely responsible for:</p>
+        <ul>
+            <li>The files you share</li>
+            <li>The files you download</li>
+            <li>The links you open or forward</li>
+        </ul>
+        <p>
+            <strong>Only open links from people you trust.</strong> Peerino cannot
+            verify the identity of senders or the safety of files.
+        </p>
+
+        <h2>3. Prohibited Use</h2>
+        <p>You agree NOT to use Peerino to:</p>
+        <ul>
+            <li>Share illegal content (CSAM, terrorism, malware, etc.)</li>
+            <li>Infringe copyright or intellectual property rights</li>
+            <li>Harass, threaten, or harm others</li>
+            <li>Distribute viruses, worms, or any malicious code</li>
+            <li>Violate any applicable law</li>
+        </ul>
+
+        <h2>4. No Warranty</h2>
+        <p>
+            Peerino is provided <strong>"as is"</strong>, without warranty of any kind,
+            express or implied. We do not guarantee that the app will work without
+            errors or interruptions.
+        </p>
+
+        <h2>5. Limitation of Liability</h2>
+        <p>
+            To the maximum extent permitted by law, Peerino and its authors are not
+            liable for any damages arising from the use of the app, including but not
+            limited to: data loss, file corruption, legal consequences of shared
+            content, or network issues.
+        </p>
+
+        <h2>6. Open Source</h2>
+        <p>
+            Peerino is open source software licensed under the
+            <a href="https://www.gnu.org/licenses/agpl-3.0.html">GNU Affero General
+            Public License v3.0 (AGPLv3)</a>. You can view, modify, and distribute
+            the source code under the terms of that license.
+        </p>
+
+        <h2>7. Changes to These Terms</h2>
+        <p>
+            We may update these terms. Continued use of Peerino after changes means
+            you accept the new terms.
+        </p>
+
+        <h2>8. Governing Law</h2>
+        <p>
+            These terms are governed by Italian and European Union law.
+        </p>
+
+        <h2>9. Contact</h2>
+        <p>
+            For any question: <a href="mailto:support@peerino.com">support@peerino.com</a>
+        </p>
+
+        <a href="/" class="back-link">← Back to Peerino</a>
+    </div>
+</body>
+</html>
