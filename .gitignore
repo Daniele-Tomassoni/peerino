@@ -174,3 +174,12 @@ playwright-report/
 *.tar.gz
 *.rar
 *.7z
+
+# ==============================================================
+# SVILUPPO INTERNO (non tracciare mai)
+# ==============================================================
+CHECKPOINT.md
+project-context.md
+peerino.md
+roadmap*.pdf
+*.pdf
