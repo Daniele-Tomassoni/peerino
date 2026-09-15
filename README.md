@@ -48,7 +48,7 @@ Peerino is an open-source desktop application for peer-to-peer file sharing. Sen
 
 ### Download
 
-Download the latest version from [GitHub Releases](https://github.com/your-username/peerino/releases).
+Download the latest version from [GitHub Releases](https://github.com/Daniele-Tomassoni/peerino/releases).
 
 1. Download the `.msi` or `.exe` file
 2. Run the installer
@@ -158,7 +158,7 @@ Peerino is open source and contributions are welcome.
 4. Push to the branch (`git push origin feature/amazing`)
 5. Open a Pull Request
 
-For bugs and requests, open an [Issue](https://github.com/your-username/peerino/issues).
+For bugs and requests, open an [Issue](https://github.com/Daniele-Tomassoni/peerino/issues).
 
 ---
 
@@ -177,8 +177,8 @@ See [`LICENSE`](LICENSE) for the full text.
 ## 📬 Contact
 
 - **Email**: support@peerino.com
-- **GitHub**: [github.com/your-username/peerino](https://github.com/your-username/peerino)
-- **Issues**: [github.com/your-username/peerino/issues](https://github.com/your-username/peerino/issues)
+- **GitHub**: [github.com/Daniele-Tomassoni/peerino](https://github.com/Daniele-Tomassoni/peerino)
+- **Issues**: [github.com/Daniele-Tomassoni/peerino/issues](https://github.com/Daniele-Tomassoni/peerino/issues)
 
 ---
 
