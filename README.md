@@ -85,6 +85,29 @@ npm run tauri build
 
 L'installer viene generato in `src-tauri/target/release/bundle/`.
 
+### ⚠️ Windows: Race condition con Windows Defender
+
+Su Windows, `npm run tauri dev` può fallire con `STATUS_ENTRYPOINT_NOT_FOUND`
+a causa di una race condition con Windows Defender. Quando `cargo run` compila
+e esegue immediatamente il binario, Defender può bloccarlo durante la scansione.
+
+**Soluzioni**:
+
+**Opzione 1 — Esclusione Defender (consigliata)**:
+
+```powershell
+Add-MpPreference -ExclusionPath "$PWD\src-tauri\target"
+```
+
+**Opzione 2 — Script di sviluppo manuale**:
+
+```powershell
+.\dev.ps1
+```
+
+Lo script avvia Vite, attende, compila il backend Rust, attende la scansione
+di Defender, poi lancia l'eseguibile.
+
 ---
 
 ## ⚙️ Configurazione

@@ -30,6 +30,41 @@
             padding: 0;
             box-sizing: border-box;
         }
+        :root {
+            /* Background */
+            --bg-0: #070B14;
+            --bg-1: #16213E;
+
+            /* Panel */
+            --panel: rgba(20, 30, 55, 0.72);
+            --panel-border: rgba(56, 189, 248, 0.18);
+
+            /* Text */
+            --text: #e2e8f0;
+            --text-dim: #94a3b8;
+
+            /* Accents */
+            --accent: #38bdf8;
+            --accent-2: #22d3ee;
+
+            /* Status */
+            --green: #22c55e;
+            --yellow: #eab308;
+            --red: #ef4444;
+
+            /* Radius */
+            --radius-sm: 8px;
+            --radius-md: 12px;
+            --radius-lg: 16px;
+
+            /* Shadows */
+            --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.15);
+            --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.35);
+            --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
+
+            /* Gradient */
+            --gradient-angle: 160deg;
+        }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             min-height: 100vh;
@@ -37,7 +72,7 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            background: linear-gradient(180deg, #070B14 0%, #16213E 100%);
+            background: linear-gradient(var(--gradient-angle), var(--bg-0) 0%, var(--bg-1) 100%);
             padding: 20px;
             position: relative;
         }
@@ -73,13 +108,13 @@
             z-index: 1;
             width: 100%;
             max-width: 560px;
-            background: rgba(30, 41, 59, 0.85);
+            background: var(--panel);
             backdrop-filter: blur(12px);
             -webkit-backdrop-filter: blur(12px);
-            border-radius: 16px;
+            border-radius: var(--radius-lg);
             padding: 30px 24px;
-            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
-            border: 1px solid rgba(255, 255, 255, 0.06);
+            box-shadow: var(--shadow-lg);
+            border: 1px solid var(--panel-border);
         }
 
         /* ===== HEADER ===== */
@@ -95,7 +130,7 @@
         .header h1 {
             font-size: 1.4rem;
             font-weight: 700;
-            background: linear-gradient(135deg, #60a5fa, #3b82f6);
+            background: linear-gradient(135deg, var(--accent), var(--accent-2));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             background-clip: text;
@@ -103,48 +138,48 @@
         .header .badge {
             margin-left: auto;
             font-size: 0.65rem;
-            background: rgba(59, 130, 246, 0.15);
-            color: #60a5fa;
+            background: rgba(56, 189, 248, 0.15);
+            color: var(--accent);
             padding: 4px 12px;
             border-radius: 20px;
             font-weight: 500;
-            border: 1px solid rgba(59, 130, 246, 0.2);
+            border: 1px solid rgba(56, 189, 248, 0.2);
         }
 
         /* ===== STATUS ===== */
         .status-box {
-            background: #0f172a;
+            background: var(--bg-1);
             padding: 12px 16px;
-            border-radius: 8px;
+            border-radius: var(--radius-sm);
             margin-bottom: 16px;
             font-size: 0.9rem;
-            color: #94a3b8;
+            color: var(--text-dim);
             min-height: 48px;
             display: flex;
             align-items: center;
             justify-content: center;
-            border: 1px solid rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--panel-border);
             text-align: center;
             word-break: break-word;
         }
         .status-box.success {
-            color: #4ade80;
-            border-color: rgba(74, 222, 128, 0.15);
+            color: var(--green);
+            border-color: rgba(34, 197, 94, 0.15);
         }
         .status-box.error {
-            color: #f87171;
-            border-color: rgba(248, 113, 113, 0.15);
+            color: var(--red);
+            border-color: rgba(239, 68, 68, 0.15);
         }
         .status-box.loading {
-            color: #fbbf24;
-            border-color: rgba(251, 191, 36, 0.15);
+            color: var(--yellow);
+            border-color: rgba(234, 179, 8, 0.15);
         }
         .spinner {
             display: inline-block;
             width: 16px;
             height: 16px;
             border: 2px solid rgba(255, 255, 255, 0.1);
-            border-top-color: #3b82f6;
+            border-top-color: var(--accent);
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
             margin-right: 8px;
@@ -174,20 +209,20 @@
         .progress-bar {
             width: 100%;
             height: 6px;
-            background: #1e293b;
-            border-radius: 4px;
+            background: var(--bg-1);
+            border-radius: var(--radius-sm);
             overflow: hidden;
         }
         .progress-fill {
             height: 100%;
             width: 0%;
-            background: linear-gradient(90deg, #3b82f6, #60a5fa);
-            border-radius: 4px;
+            background: linear-gradient(90deg, var(--accent), var(--accent-2));
+            border-radius: var(--radius-sm);
             transition: width 0.3s ease;
         }
         .progress-text {
             font-size: 0.8rem;
-            color: #64748b;
+            color: var(--text-dim);
             margin-top: 4px;
             text-align: center;
         }
@@ -196,8 +231,8 @@
             width: 100%;
             padding: 14px;
             border: none;
-            border-radius: 10px;
-            background: linear-gradient(135deg, #22c55e, #16a34a);
+            border-radius: var(--radius-md);
+            background: linear-gradient(135deg, var(--green), #15803d);
             color: #fff;
             font-weight: 700;
             font-size: 1rem;
@@ -229,33 +264,33 @@
         }
 
         .upload-zone {
-            border: 2px dashed #334155;
-            border-radius: 12px;
+            border: 2px dashed var(--panel-border);
+            border-radius: var(--radius-md);
             padding: 40px 20px;
             text-align: center;
-            background: rgba(15, 23, 42, 0.5);
+            background: var(--panel);
             cursor: pointer;
             transition: all 0.3s;
             margin-bottom: 12px;
         }
         .upload-zone:hover {
-            border-color: #3b82f6;
-            background: rgba(59, 130, 246, 0.05);
+            border-color: var(--accent);
+            background: rgba(56, 189, 248, 0.08);
         }
         .upload-zone.dragover {
-            border-color: #3b82f6;
-            background: rgba(59, 130, 246, 0.1);
+            border-color: var(--accent);
+            background: rgba(56, 189, 248, 0.12);
         }
         .upload-zone .icon {
             font-size: 3rem;
             margin-bottom: 8px;
         }
         .upload-zone p {
-            color: #94a3b8;
+            color: var(--text-dim);
             font-size: 0.95rem;
         }
         .upload-zone .filename-display {
-            color: #60a5fa;
+            color: var(--accent);
             font-weight: 600;
         }
         .upload-zone input[type="file"] {
@@ -266,8 +301,8 @@
             width: 100%;
             padding: 14px;
             border: none;
-            border-radius: 10px;
-            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            border-radius: var(--radius-md);
+            background: linear-gradient(135deg, var(--accent), #0284c7);
             color: #fff;
             font-weight: 700;
             font-size: 1rem;
@@ -276,7 +311,7 @@
         }
         .upload-btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 6px 24px rgba(59, 130, 246, 0.3);
+            box-shadow: 0 6px 24px rgba(56, 189, 248, 0.3);
         }
         .upload-btn:disabled {
             opacity: 0.6;
@@ -300,40 +335,40 @@
             align-items: center;
             gap: 8px;
             font-size: 0.8rem;
-            color: #64748b;
-            background: #0f172a;
-            border: 1px solid rgba(255, 255, 255, 0.04);
+            color: var(--text-dim);
+            background: var(--bg-1);
+            border: 1px solid var(--panel-border);
             padding: 8px 12px;
-            border-radius: 8px;
+            border-radius: var(--radius-sm);
             transition: all 0.3s;
         }
         .phase .dot {
             width: 8px;
             height: 8px;
             border-radius: 50%;
-            background: #334155;
+            background: var(--panel-border);
             flex-shrink: 0;
         }
         /* Active phase = blue (work in progress). Yellow is RESERVED for the
            TURN relay outcome only, matching the LED semantics of the app. */
-        .phase.active { color: #38bdf8; border-color: rgba(56, 189, 248, 0.2); }
-        .phase.active .dot { background: #38bdf8; animation: phasepulse 0.9s infinite alternate; }
-        .phase.done { color: #4ade80; border-color: rgba(74, 222, 128, 0.15); }
-        .phase.done .dot { background: #4ade80; }
-        .phase.done.turn { color: #fbbf24; border-color: rgba(251, 191, 36, 0.2); }
-        .phase.done.turn .dot { background: #fbbf24; }
-        .phase.done.overlimit { color: #f87171; border-color: rgba(248, 113, 113, 0.2); }
-        .phase.done.overlimit .dot { background: #f87171; }
-        .phase.fail { color: #475569; }
-        .phase.fail .dot { background: #334155; }
+        .phase.active { color: var(--accent); border-color: rgba(56, 189, 248, 0.2); }
+        .phase.active .dot { background: var(--accent); animation: phasepulse 0.9s infinite alternate; }
+        .phase.done { color: var(--green); border-color: rgba(34, 197, 94, 0.15); }
+        .phase.done .dot { background: var(--green); }
+        .phase.done.turn { color: var(--yellow); border-color: rgba(234, 179, 8, 0.2); }
+        .phase.done.turn .dot { background: var(--yellow); }
+        .phase.done.overlimit { color: var(--red); border-color: rgba(239, 68, 68, 0.2); }
+        .phase.done.overlimit .dot { background: var(--red); }
+        .phase.fail { color: var(--text-dim); }
+        .phase.fail .dot { background: var(--panel-border); }
         @keyframes phasepulse { to { opacity: 0.35; } }
 
         .start-btn {
             width: 100%;
             padding: 14px;
             border: none;
-            border-radius: 10px;
-            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            border-radius: var(--radius-md);
+            background: linear-gradient(135deg, var(--accent), #0284c7);
             color: #fff;
             font-weight: 700;
             font-size: 1rem;
@@ -343,7 +378,7 @@
         }
         .start-btn:hover {
             transform: translateY(-2px);
-            box-shadow: 0 6px 24px rgba(59, 130, 246, 0.3);
+            box-shadow: 0 6px 24px rgba(56, 189, 248, 0.3);
         }
         .start-btn:disabled {
             opacity: 0.6;
@@ -354,16 +389,16 @@
 
         /* ===== LOG ===== */
         .log-container {
-            background: #0f172a;
+            background: var(--bg-1);
             padding: 10px;
-            border-radius: 8px;
+            border-radius: var(--radius-sm);
             max-height: 150px;
             overflow: auto;
             font-size: 0.7rem;
-            color: #94a3b8;
+            color: var(--text-dim);
             font-family: monospace;
             margin-top: 14px;
-            border: 1px solid rgba(255, 255, 255, 0.04);
+            border: 1px solid var(--panel-border);
             text-align: left;
             white-space: pre-wrap;
             word-break: break-all;
@@ -377,8 +412,8 @@
         .footer {
             margin-top: 14px;
             font-size: 0.7rem;
-            color: #475569;
-            border-top: 1px solid rgba(255, 255, 255, 0.04);
+            color: var(--text-dim);
+            border-top: 1px solid var(--panel-border);
             padding-top: 12px;
             text-align: center;
         }
@@ -425,7 +460,7 @@
         </div>
 
         <!-- TURN bandwidth warning -->
-        <div id="turn-warning" class="turn-warning" style="display:none; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.3); border-radius: 8px; padding: 12px; margin-top: 10px; color: #fbbf24; font-size: 0.85rem; text-align: center; font-weight: 500;">
+        <div id="turn-warning" class="turn-warning" style="display:none; background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.3); border-radius: var(--radius-sm); padding: 12px; margin-top: 10px; color: var(--yellow); font-size: 0.85rem; text-align: center; font-weight: 500;">
             ⚠️ This transfer uses a relay server. It may be slower and count double against your bandwidth.
         </div>
 
@@ -446,7 +481,7 @@
             <div class="upload-zone" id="uploadZone">
                 <div class="icon">📥</div>
                 <p>Drag a file here or click to select it</p>
-                <p style="font-size:0.8rem; color:#64748b; margin-top:8px;" id="upload-filename-display">No file selected</p>
+                <p style="font-size:0.8rem; color:var(--text-dim); margin-top:8px;" id="upload-filename-display">No file selected</p>
                 <input type="file" id="fileInput">
             </div>
             <button id="uploadBtn" class="upload-btn">📤 Upload file</button>
