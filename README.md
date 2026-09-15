@@ -2,195 +2,179 @@
 
 **P2P file sharing without cloud, without accounts, without intermediaries.**
 
-Peerino è un'applicazione desktop open source per la condivisione di file
-peer-to-peer. Invia un file a chiunque tramite un semplice link — il
-destinatario non ha bisogno di installare nulla. Oppure ricevi file da
-chiunque, direttamente sul tuo computer.
+Peerino is an open-source desktop application for peer-to-peer file sharing. Send a file to anyone via a simple link — the recipient doesn't need to install anything. Or receive files from anyone, directly on your computer.
 
 ---
 
-## ✨ Caratteristiche
+## ✨ Features
 
-- 🔗 **Condivisione tramite link**: genera un link, condividilo, il
-  destinatario scarica il file dal browser
-- 📥 **Inbox**: ricevi file da chiunque tramite un link, senza che debbano
-  installare Peerino
-- 🔒 **Privacy**: connessione WebRTC crittografata end-to-end (DTLS)
-- 🏠 **Fallback LAN**: trasferimento diretto nella stessa rete, senza
-  passare da Internet
-- ⚡ **WebRTC P2P**: connessione diretta tra peer quando possibile
-- ✅ **Verifica integrità**: hash SHA-256 su ogni file
-- 🆓 **Open source**: licenza MIT, gratuito, senza account
-- 💻 **Solo Windows** (per ora; macOS e Linux in roadmap)
+- 🔗 **Share via link**: generate a link, share it, and the recipient downloads the file from their browser
+- 📥 **Inbox**: receive files from anyone via a link, without them needing to install Peerino
+- 🔒 **Privacy**: end-to-end encrypted WebRTC connections (DTLS)
+- 🏠 **LAN fallback**: direct transfer on the same network, without going through the internet
+- ⚡ **WebRTC P2P**: direct peer-to-peer connection when possible
+- ✅ **Integrity verification**: SHA-256 hash on every file
+- 🆓 **Open source**: AGPLv3 licensed, free, no account required
+- 💻 **Windows only** (for now; macOS and Linux in roadmap)
 
 ---
 
-## 🚀 Come funziona
+## 🚀 How it works
 
-### Inviare un file a chi non ha Peerino
+### Send a file to someone who doesn't have Peerino
 
-1. Apri Peerino
-2. Seleziona il file che vuoi condividere
-3. Clicca **Share** — il link viene copiato automaticamente
-4. Incollalo in un'email, chat, o qualsiasi altro canale
-5. Il destinatario apre il link nel browser e scarica il file
+1. Open Peerino
+2. Select the file you want to share
+3. Click **Share** — the link is copied automatically
+4. Paste it in an email, chat, or any other channel
+5. The recipient opens the link in their browser and downloads the file
 
-### Ricevere un file da chi non ha Peerino
+### Receive a file from someone who doesn't have Peerino
 
-1. Apri Peerino
-2. Clicca **Inbox** — viene generato un link
-3. Copia il link e invialo a chi vuole mandarti un file
-4. Il destinatario apre il link nel browser e carica il file
-5. Il file arriva direttamente nel tuo computer
+1. Open Peerino
+2. Click **Inbox** — a link is generated
+3. Copy the link and send it to whoever wants to send you a file
+4. The recipient opens the link in their browser and uploads the file
+5. The file arrives directly on your computer
 
 ---
 
-## 📦 Installazione
+## 📦 Installation
 
-### Requisiti
+### Requirements
 
-- Windows 10 o 11 (64-bit)
-- WebView2 (preinstallato su Windows 10/11 recenti)
+- Windows 10 or 11 (64-bit)
+- WebView2 (preinstalled on recent Windows 10/11)
 
 ### Download
 
-Scarica l'ultima versione da [GitHub Releases](https://github.com/your-username/peerino/releases).
+Download the latest version from [GitHub Releases](https://github.com/your-username/peerino/releases).
 
-1. Scarica il file `.msi` o `.exe`
-2. Esegui l'installer
-3. Avvia Peerino dal menu Start
+1. Download the `.msi` or `.exe` file
+2. Run the installer
+3. Launch Peerino from the Start menu
 
 ---
 
-## 🛠️ Build da sorgente
+## 🛠️ Build from source
 
-### Prerequisiti
+### Prerequisites
 
 - [Node.js](https://nodejs.org/) (LTS)
-- [Rust](https://www.rust-lang.org/tools/install) (toolchain stabile)
-- [Tauri CLI](https://tauri.app/v1/guides/getting-started/prerequisites)
+- [Rust](https://www.rust-lang.org/tools/install) (stable toolchain)
+- [Tauri CLI](https://tauri.app/v2/guides/getting-started/prerequisites)
 
-### Comandi
+### Commands
 
 ```bash
-# Installa le dipendenze
+# Install dependencies
 npm install
 
-# Avvia in modalità sviluppo (hot reload)
+# Start in development mode (hot reload)
 npm run tauri dev
 
-# Build di produzione (genera installer)
+# Production build (generates installer)
 npm run tauri build
 ```
 
-L'installer viene generato in `src-tauri/target/release/bundle/`.
+The installer is generated in `src-tauri/target/release/bundle/`.
 
-### ⚠️ Windows: Race condition con Windows Defender
+### ⚠️ Windows: Race condition with Windows Defender
 
-Su Windows, `npm run tauri dev` può fallire con `STATUS_ENTRYPOINT_NOT_FOUND`
-a causa di una race condition con Windows Defender. Quando `cargo run` compila
-e esegue immediatamente il binario, Defender può bloccarlo durante la scansione.
+On Windows, `npm run tauri dev` can fail with `STATUS_ENTRYPOINT_NOT_FOUND` due to a race condition with Windows Defender. When `cargo run` compiles and immediately executes the binary, Defender can block it during scanning.
 
-**Soluzioni**:
+**Solutions**:
 
-**Opzione 1 — Esclusione Defender (consigliata)**:
+**Option 1 — Defender exclusion (recommended)**:
 
 ```powershell
 Add-MpPreference -ExclusionPath "$PWD\src-tauri\target"
 ```
 
-**Opzione 2 — Script di sviluppo manuale**:
+**Option 2 — Manual development script**:
 
 ```powershell
 .\dev.ps1
 ```
 
-Lo script avvia Vite, attende, compila il backend Rust, attende la scansione
-di Defender, poi lancia l'eseguibile.
+The script starts Vite, waits, compiles the Rust backend, waits for Defender's scan, then launches the executable.
 
 ---
 
-## ⚙️ Configurazione
+## ⚙️ Configuration
 
-Copia `.env.example` in `.env` e compila le variabili:
+Copy `.env.example` to `.env` and fill in the variables:
 
 ```bash
 cp .env.example .env
 ```
 
-### Variabili
+### Variables
 
-| Variabile | Descrizione | Default |
-|-----------|-------------|---------|
-| `TURN_URLS` | URL del server TURN (Coturn) | `turn:peerino.com:3478` |
-| `TURN_AUTH_SECRET` | Secret condiviso con Coturn (schema REST) | *(vuoto fino a configurazione)* |
-| `TURN_CRED_TTL_SECS` | TTL credenziali effimere | `7200` (2 ore) |
-| `STUN_URLS` | Lista server STUN (separati da virgola) | Xiaomi, Bilibili, Yandex, Google, Cloudflare |
-| `SIGNALING_URL` | URL del server di signaling | `0.peerjs.com` |
-| `P2P_WEB_URL` | URL della pagina web per il browser destinatario | `https://peerino.com/receiver` |
-| `HTTP_PORT` | Porta del server HTTP locale | `3000` |
-| `TURN_MAX_FILE_SIZE` | Limite dimensione file su TURN (byte) | `104857600` (100 MB) |
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `TURN_URLS` | TURN server URL (Coturn) | `turn:peerino.com:3478` |
+| `TURN_AUTH_SECRET` | Shared secret with Coturn (REST scheme) | *(empty until configured)* |
+| `TURN_CRED_TTL_SECS` | Ephemeral credential TTL | `7200` (2 hours) |
+| `STUN_URLS` | Comma-separated list of STUN servers | Xiaomi, Bilibili, Yandex, Google, Cloudflare |
+| `SIGNALING_URL` | Signaling server URL | `0.peerjs.com` |
+| `P2P_WEB_URL` | Web page URL for the browser recipient | `https://peerino.com/receiver` |
+| `HTTP_PORT` | Local HTTP server port | `3000` |
+| `TURN_MAX_FILE_SIZE` | Max file size over TURN (bytes) | `104857600` (100 MB) |
 
-**Nota**: `TURN_AUTH_SECRET` va popolato solo dopo aver configurato Coturn
-sul VPS. Senza questo valore, Peerino usa solo STUN (funziona nella
-maggior parte dei casi ma non su NAT simmetrici).
+**Note**: `TURN_AUTH_SECRET` only needs to be set after configuring Coturn on your VPS. Without this value, Peerino uses STUN only (works in most cases but not on symmetric NAT).
 
 ---
 
-## 🔐 Privacy e sicurezza
+## 🔐 Privacy & Security
 
-- **Crittografia end-to-end**: tutte le connessioni WebRTC usano DTLS
-- **Nessun server centrale**: i file passano direttamente tra peer
-- **Nessun account**: nessuna registrazione, nessun login
-- **Metadati minimi**: nome file e hash sono nel link (chi ha il link può
-  scaricare il file)
-- **Scadenza link**: i link scadono dopo 24 ore
-- **Limite download**: ogni link ha un numero massimo di download
-- **Limite TURN**: 100 MB per proteggere la banda del relay TURN condiviso
-
----
-
-## ⚠️ Limitazioni attuali
-
-- **Solo Windows**: macOS e Linux in roadmap
-- **App mobile**: in roadmap
-- **Sistema crediti**: in roadmap
-- **DHT**: scoperta peer decentralizzata in roadmap
-- **Nessuna autenticazione**: chi ha il link può scaricare il file
+- **End-to-end encryption**: all WebRTC connections use DTLS
+- **No central server**: files pass directly between peers
+- **No account**: no registration, no login
+- **Minimal metadata**: filename and hash are in the link (whoever has the link can download the file)
+- **Link expiration**: links expire after 24 hours
+- **Download limit**: each link has a maximum number of downloads
+- **TURN limit**: 100 MB to protect shared TURN relay bandwidth
 
 ---
 
-## 🤝 Contribuire
+## ⚠️ Current Limitations
 
-Peerino è open source e i contributi sono benvenuti.
-
-1. Fai un fork del repository
-2. Crea un branch per la tua feature (`git checkout -b feature/amazing`)
-3. Committa le modifiche (`git commit -m 'Add amazing feature'`)
-4. Push sul branch (`git push origin feature/amazing`)
-5. Apri una Pull Request
-
-Per bug e richieste, apri una [Issue](https://github.com/your-username/peerino/issues).
+- **Windows only**: macOS and Linux in roadmap
+- **Mobile app**: in roadmap
+- **Credit system**: in roadmap
+- **DHT**: decentralized peer discovery in roadmap
+- **No authentication**: anyone with the link can download the file
 
 ---
 
-## 📄 Licenza
+## 🤝 Contributing
 
-Distribuito sotto licenza **GNU Affero General Public License v3.0 (AGPLv3)**.
+Peerino is open source and contributions are welcome.
 
-Questo progetto è software libero: puoi redistribuirlo e/o modificare secondo
-i termini della GNU Affero General Public License, versione 3, come pubblicata
-dalla Free Software Foundation.
+1. Fork the repository
+2. Create a branch for your feature (`git checkout -b feature/amazing`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing`)
+5. Open a Pull Request
 
-Vedi [`LICENSE`](LICENSE) per il testo completo.
-
-**Nota**: se modifichi Peerino e lo offri come servizio di rete, devi
-rilasciare il codice sorgente delle tue modifiche sotto la stessa licenza
-(questo è il requisito principale dell'AGPLv3).
+For bugs and requests, open an [Issue](https://github.com/your-username/peerino/issues).
 
 ---
 
-## 📬 Contatti
+## 📄 License
+
+Distributed under the **GNU Affero General Public License v3.0 (AGPLv3)**.
+
+This project is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License, version 3, as published by the Free Software Foundation.
+
+See [`LICENSE`](LICENSE) for the full text.
+
+**Note**: if you modify Peerino and offer it as a network service, you must release the source code of your modifications under the same license (this is the main requirement of AGPLv3).
+
+---
+
+## 📬 Contact
 
 - **Email**: support@peerino.com
 - **GitHub**: [github.com/your-username/peerino](https://github.com/your-username/peerino)
@@ -198,4 +182,4 @@ rilasciare il codice sorgente delle tue modifiche sotto la stessa licenza
 
 ---
 
-**Peerino** — Condividi file. Senza cloud. Senza account. Senza intermediari.
+**Peerino** — Share files. Without cloud. Without accounts. Without intermediaries.

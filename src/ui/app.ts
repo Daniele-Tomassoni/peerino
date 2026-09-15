@@ -1616,12 +1616,22 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
 
                 // Wait for the first path detection result before deciding
                 // whether to reject (TURN + >100MB) or accept.
-                // Use the same polling logic (no duplicate).
+                // Use the pollTurnPath callback above (already running) to
+                // set detectedPath2. This replaces the previous duplicate
+                // for-loop that called detectConnectionPath a second time
+                // on the same connection (race condition).
                 for (let attempt = 0; attempt < 10 && !detectedPath2; attempt++) {
-                    if (attempt > 0) {
-                        await new Promise<void>(r => setTimeout(r, 1000));
-                    }
+                    await new Promise<void>(r => setTimeout(r, 500));
+                }
+                // Fallback: if pollTurnPath hasn't resolved yet, do one final
+                // synchronous detection to guarantee we have a path before
+                // the TURN limit check.
+                if (!detectedPath2) {
                     detectedPath2 = await detectConnectionPath(conn).catch(() => null);
+                }
+                // If detection still fails, assume 'turn' for safety (max caution).
+                if (!detectedPath2) {
+                    detectedPath2 = 'turn';
                 }
                 if (detectedPath2 === 'turn' && msg.size > turnMaxSize2) {
                     const errMsg = 'Your connection requires a relay server. To share this file, connect to WiFi.';
