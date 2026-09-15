@@ -111,6 +111,7 @@ body {
 .app-header h1 {
     font-size: 1.95rem;
     font-weight: 600;
+    color: var(--accent);
     text-shadow: 0 0 12px rgba(56, 189, 248, 0.4);
     display: flex;
     align-items: center;
