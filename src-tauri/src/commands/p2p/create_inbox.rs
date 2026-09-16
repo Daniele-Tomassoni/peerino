@@ -74,7 +74,9 @@ pub async fn create_inbox(state: State<'_, AppState>) -> Result<String, String> 
     let cfg = &resolution.config;
 
     if let Some(sig) = &cfg.signaling_url {
-        link.push_str(&format!("&signal={}", encode(&sig)));
+        if sig != "0.peerjs.com" {
+            link.push_str(&format!("&signal={}", encode(&sig)));
+        }
     }
 
     // NOTE: STUN and TURN are now included ONLY in the `&ice=<base64>` parameter below.

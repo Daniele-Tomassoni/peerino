@@ -100,7 +100,9 @@ pub async fn generate_web_link(
         .filter(|s| !s.is_empty())
         .or_else(|| cfg.signaling_url.clone());
     if let Some(sig) = signal {
-        link.push_str(&format!("&signal={}", encode(&sig)));
+        if sig != "0.peerjs.com" {
+            link.push_str(&format!("&signal={}", encode(&sig)));
+        }
     }
 
     // NOTE: STUN and TURN are now included ONLY in the `&ice=<base64>` parameter below.

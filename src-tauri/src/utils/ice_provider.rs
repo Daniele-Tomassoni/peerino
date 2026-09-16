@@ -35,7 +35,7 @@
 use crate::utils::turn_creds::{
     ice_link_config_from_env, ice_link_config_from_env_with_ttl, IceLinkConfig,
 };
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
 
@@ -317,19 +317,33 @@ pub fn build_browser_ice_servers(resolution: &IceResolution) -> Vec<IceServerEnt
     out
 }
 
-/// Serializes `iceServers` for inclusion as a URL parameter (base64 of JSON).
+/// Serializes `iceServers` for inclusion as a URL parameter.
+/// Compact format: base64 URL-safe of `{"u":"<user>","c":"<cred>","s":["stun:..."],"t":["turn:..."]}`.
+/// `u`/`c` are shared across all TURN entries; `s` = STUN list, `t` = TURN list.
 pub fn encode_ice_servers_param(entries: &[IceServerEntry]) -> String {
-    let json = serde_json::to_string(entries).unwrap_or_else(|_| "[]".to_string());
-    BASE64.encode(json.as_bytes())
-}
+    let mut stun_urls: Vec<String> = Vec::new();
+    let mut turn_urls: Vec<String> = Vec::new();
+    let mut username: Option<String> = None;
+    let mut credential: Option<String> = None;
 
-/// Decodes the `iceServers` array from the URL parameter (browser side or test).
-pub fn decode_ice_servers_param(encoded: &str) -> Vec<IceServerEntry> {
-    let bytes = match BASE64.decode(encoded.as_bytes()) {
-        Ok(b) => b,
-        Err(_) => return vec![],
-    };
-    serde_json::from_slice::<Vec<IceServerEntry>>(&bytes).unwrap_or_default()
+    for e in entries {
+        if e.username.is_some() && e.credential.is_some() {
+            turn_urls.extend(e.urls.iter().cloned());
+            username = e.username.clone();
+            credential = e.credential.clone();
+        } else {
+            stun_urls.extend(e.urls.iter().cloned());
+        }
+    }
+
+    let compact = serde_json::json!({
+        "u": username,
+        "c": credential,
+        "s": stun_urls,
+        "t": turn_urls,
+    });
+    let json = compact.to_string();
+    URL_SAFE_NO_PAD.encode(json.as_bytes())
 }
 
 async fn fetch_metered(api_key: &str) -> Result<Vec<IceServerEntry>, String> {
@@ -400,7 +414,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn encode_decode_roundtrip() {
+    fn encode_format_is_compact() {
+        use base64::{engine::general_purpose::STANDARD, Engine};
+
         let entries = vec![
             IceServerEntry {
                 urls: vec!["turn:global.relay.metered.ca:80".to_string()],
@@ -414,14 +430,20 @@ mod tests {
             },
         ];
         let encoded = encode_ice_servers_param(&entries);
-        let decoded = decode_ice_servers_param(&encoded);
-        assert_eq!(decoded.len(), 2);
-        assert_eq!(decoded[0].username.as_deref(), Some("user"));
-    }
 
-    #[test]
-    fn decode_invalid_returns_empty() {
-        let decoded = decode_ice_servers_param("not_base64!!!");
-        assert!(decoded.is_empty());
+        // URL_SAFE_NO_PAD → STANDARD per decodificare
+        let std_b64 = encoded.replace("-", "+").replace("_", "/");
+        let pad = std_b64.len() % 4;
+        let std_b64 = if pad > 0 {
+            format!("{}{}", std_b64, "=".repeat(4 - pad))
+        } else { std_b64 };
+        let json_bytes = STANDARD.decode(std_b64.as_bytes()).unwrap();
+        let json_str = String::from_utf8(json_bytes).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+
+        assert_eq!(v["u"], "user");
+        assert_eq!(v["c"], "pass");
+        assert_eq!(v["s"][0], "stun:stun.l.google.com:19302");
+        assert_eq!(v["t"][0], "turn:global.relay.metered.ca:80");
     }
 }

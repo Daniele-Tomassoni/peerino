@@ -489,20 +489,23 @@
             gap: 8px;
             padding: 10px 14px;
             margin-top: 10px;
-            background: rgba(56, 189, 248, 0.08);
-            border: 1px solid rgba(56, 189, 248, 0.2);
+            background: rgba(56, 189, 248, 0.15);
+            border: 1px solid rgba(56, 189, 248, 0.45);
             border-radius: var(--radius-sm);
             font-size: 0.85rem;
             color: var(--text-dim);
-            animation: ctaFadeIn 0.4s ease, ctaPulse 3s ease-in-out 0.4s 2;
         }
 
         .peerino-cta.hidden {
             display: none;
         }
 
+        .peerino-cta.cta-visible {
+            animation: ctaFadeIn 0.4s ease;
+        }
+
         .peerino-cta-icon {
-            font-size: 1.1rem;
+            font-size: 1.2rem;
             flex-shrink: 0;
         }
 
@@ -525,17 +528,6 @@
         @keyframes ctaFadeIn {
             from { opacity: 0; transform: translateY(4px); }
             to { opacity: 1; transform: translateY(0); }
-        }
-
-        @keyframes ctaPulse {
-            0%, 100% { opacity: 0.7; }
-            50%      { opacity: 1.0; }
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-            .peerino-cta {
-                animation: ctaFadeIn 0.4s ease;
-            }
         }
     </style>
 </head>
@@ -677,7 +669,7 @@
             // (the page origin is Netlify, not the sender's server)
             const serverUrl = params.get('serverUrl');
             // WebRTC config for inbox upload (signal, turnUser, turnPass)
-            const signalHost = params.get('signal');
+            const signalHost = params.get('signal') || '0.peerjs.com';
             const turnUser = params.get('turnUser');
             const turnPass = params.get('turnPass');
             // ICE servers from the link (env-driven): comma separated lists
@@ -790,9 +782,18 @@
             function showPeerinoCta(mode) {
                 const ctaId = mode === 'download' ? 'peerino-cta-download' : 'peerino-cta-upload';
                 const cta = document.getElementById(ctaId);
-                if (cta && cta.classList.contains('hidden')) {
-                    cta.classList.remove('hidden');
-                }
+                if (!cta || !cta.classList.contains('hidden')) return;
+
+                // Rendi visibile la CTA
+                cta.classList.remove('hidden');
+
+                // Forza il browser a "vedere" il nuovo stato prima di applicare
+                // l'animazione. Senza questo reflow forzato, alcuni browser non
+                // ripartono con l'animazione.
+                void cta.offsetWidth;
+
+                // Applica la classe che attiva le animazioni
+                cta.classList.add('cta-visible');
             }
 
             // Speed/ETA for progress
@@ -1004,44 +1005,40 @@
             }
 
             function buildIceServers() {
-                // Unified TURN provider: if the link includes &ice=<base64-JSON>,
-                // decode and use the array directly (standard WebRTC format).
-                // Supports ANY TURN provider (metered, coturn self-hosted, mixed)
-                // because the backend has already done the server-side fetch.
+                // Unified TURN provider: if the link includes &ice=<base64-URL-safe-JSON>,
+                // decode the compact format and expand to standard WebRTC array.
+                // Compact format: {"u":"<user>","c":"<cred>","s":["stun:..."],"t":["turn:..."]}
                 if (iceParam) {
                     try {
-                        const json = atob(iceParam);
+                        // URL_SAFE_NO_PAD: convert to STANDARD and add padding
+                        let b64 = iceParam.replace(/-/g, '+').replace(/_/g, '/');
+                        const pad = b64.length % 4;
+                        if (pad) b64 += '='.repeat(4 - pad);
+                        const json = atob(b64);
                         const decoded = JSON.parse(json);
-                        if (Array.isArray(decoded) && decoded.length > 0) {
-                            log(`📡 Using unified ICE provider: ${decoded.length} server(s)`);
-                            return decoded;
+                        const out = [];
+                        if (Array.isArray(decoded.s) && decoded.s.length > 0) {
+                            out.push({ urls: decoded.s });
                         }
+                        if (Array.isArray(decoded.t) && decoded.t.length > 0 &&
+                            decoded.u && decoded.c) {
+                            out.push({ urls: decoded.t, username: decoded.u, credential: decoded.c });
+                        }
+                        if (out.length > 0) {
+                            log(`📡 Using unified ICE provider: ${out.length} server group(s)`);
+                            return out;
+                        }
+                        log('⚠️ &ice= decoded but empty, falling back to defaults');
                     } catch (e) {
-                        log('⚠️ Failed to decode &ice= param, falling back to legacy params: ' + e);
+                        log('⚠️ Failed to decode &ice= param: ' + e);
                     }
                 }
 
-                // Fallback: legacy parameters (stunUrls/turnUrls/turnUser/turnPass)
-                const ice = [];
-                const stuns = splitUrlList(stunUrlsParam);
-                if (stuns.length > 0) {
-                    stuns.forEach(function (u) { ice.push({ urls: u }); });
-                } else {
-                    // Public STUN fallback if the link specifies nothing
-                    ice.push({ urls: 'stun:stun.l.google.com:19302' });
-                }
-                if (turnUser && turnPass) {
-                    const turns = splitUrlList(turnUrlsParam);
-                    ice.push({
-                        urls: turns.length > 0 ? turns : ['turn:global.relay.metered.ca:80'],
-                        username: turnUser,
-                        credential: turnPass,
-                    });
-                    log('🔧 Assisted connection available');
-                } else {
-                    log('ℹ️ Direct connections only');
-                }
-                return ice;
+                // Fallback: public STUN only
+                return [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                ];
             }
 
             // ===== PEERJS CONNECTION (Download) =====
