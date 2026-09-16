@@ -278,8 +278,14 @@ async function detectConnectionPath(conn: DataConnection): Promise<'direct' | 't
         const statsMap = stats as unknown as Map<string, any>;
         const local = statsMap.get(pair.localCandidateId);
         const remote = statsMap.get(pair.remoteCandidateId);
-        const isRelay = !!local && !!remote &&
-            (local.candidateType === 'relay' || remote.candidateType === 'relay');
+        // Determina se è TURN in modo robusto:
+        // 1. candidateType === 'relay' su uno dei due lati, OPPURE
+        // 2. il campo url del candidato contiene 'turn:' (perché alcuni browser
+        //    riportano candidateType come 'prflx' anche per connessioni TURN)
+        const isRelay = (!!local && !!remote &&
+            (local.candidateType === 'relay' || remote.candidateType === 'relay')) ||
+            (local?.url && typeof local.url === 'string' && local.url.startsWith('turn:')) ||
+            (remote?.url && typeof remote.url === 'string' && remote.url.startsWith('turn:'));
         return isRelay ? 'turn' : 'direct';
     } catch {
         return null;
@@ -776,7 +782,6 @@ async function handleUpload(filePath: string): Promise<void> {
     uploadBtn.textContent = '⏳ Loading...';
     uploadStatus.className = 'status';
     const filename = filePath.split(/[\\/]/).pop() || 'file';
-    console.log('[DEBUG upload] handleUpload -> register_file (right-column progress NOT wired for this path)');
 
     try {
         uploadStatus.textContent = '📁 Processing file...';
@@ -1188,16 +1193,17 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
     // when detection fails. An undetected path is suspicious and may
     // hide a relay.
     let detectedPath: 'direct' | 'turn' | null = null;
-    for (let attempt = 0; attempt < 10; attempt++) {
-        if (attempt > 0) {
-            await new Promise<void>(r => setTimeout(r, 1000));
-        }
+    // Check sincrono: se la connessione è già stabile, il primo tentativo
+    // dovrebbe riuscire immediatamente. Riduciamo il loop a 5s totali
+    // con polling ogni 250ms (20 tentativi) invece di 10s (10 tentativi).
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
         detectedPath = await detectConnectionPath(conn).catch(() => null);
         if (detectedPath) break;
+        await new Promise<void>(r => setTimeout(r, 250));
     }
-    // Loop exhausted without result: assume 'turn' for safety.
     if (detectedPath === null) {
-        log('⚠️ detectConnectionPath: loop exhausted without result. Assuming TURN for safety.');
+        log('⚠️ detectConnectionPath: timeout (5s). Assuming TURN for safety.');
         detectedPath = 'turn';
     }
 
@@ -1281,7 +1287,6 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
             peer_id: conn.peer,
             cancelled: false
         });
-        console.log('[DEBUG upload] P2P send started:', fileInfo.hash, 'totalSize =', totalSize, 'key =', uploadKey);
         renderUploadProgressList();
 
         // Detect whether this connection goes through the TURN relay (updates the LED when ready).
@@ -1620,17 +1625,19 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                 // set detectedPath2. This replaces the previous duplicate
                 // for-loop that called detectConnectionPath a second time
                 // on the same connection (race condition).
-                for (let attempt = 0; attempt < 10 && !detectedPath2; attempt++) {
-                    await new Promise<void>(r => setTimeout(r, 500));
-                }
-                // Fallback: if pollTurnPath hasn't resolved yet, do one final
-                // synchronous detection to guarantee we have a path before
-                // the TURN limit check.
-                if (!detectedPath2) {
+                // Attesa attiva: max 5s, polling ogni 250ms invece di 500ms.
+                // Il polling async (pollTurnPath) continua a girare in background
+                // per aggiornare il badge LED; questo loop serve solo a determinare
+                // il path per il controllo del limite TURN.
+                const deadline2 = Date.now() + 5000;
+                while (Date.now() < deadline2 && !detectedPath2) {
                     detectedPath2 = await detectConnectionPath(conn).catch(() => null);
+                    if (detectedPath2) break;
+                    await new Promise<void>(r => setTimeout(r, 250));
                 }
-                // If detection still fails, assume 'turn' for safety (max caution).
+                // Fallback: se ancora null, assumi TURN per sicurezza
                 if (!detectedPath2) {
+                    log('⚠️ detectConnectionPath (upload): timeout (5s). Assuming TURN for safety.');
                     detectedPath2 = 'turn';
                 }
                 if (detectedPath2 === 'turn' && msg.size > turnMaxSize2) {
@@ -2232,7 +2239,6 @@ listen('upload-progress', (event) => {
         // activeUploads map driven by P2P events). Avoids log spam and DOM churn
         // when the app is idle.
         if (httpUploads.length === 0 && activeUploads.size === 0) return;
-        console.log('[DEBUG upload] poll get_upload_progress ->', httpUploads.length, 'HTTP uploads');
         // Update only HTTP uploads in the map (they have hash, no peer prefix)
         httpUploads.forEach(u => {
             if (u.hash) {

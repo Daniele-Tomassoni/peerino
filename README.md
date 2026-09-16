@@ -1,6 +1,6 @@
 # Peerino
 
-**P2P file sharing without cloud, without accounts, without intermediaries.**
+**P2P file sharing without cloud and without accounts. Direct when possible, relay when needed.**
 
 Peerino is an open-source desktop application for peer-to-peer file sharing. Send a file to anyone via a simple link — the recipient doesn't need to install anything. Or receive files from anyone, directly on your computer.
 
@@ -10,10 +10,11 @@ Peerino is an open-source desktop application for peer-to-peer file sharing. Sen
 
 - 🔗 **Share via link**: generate a link, share it, and the recipient downloads the file from their browser
 - 📥 **Inbox**: receive files from anyone via a link, without them needing to install Peerino
-- 🔒 **Privacy**: end-to-end encrypted WebRTC connections (DTLS)
+- 🔒 **Privacy**: file content is encrypted end-to-end with DTLS (WebRTC data channel). Note: WebRTC uses ephemeral self-signed certificates, so peer identity is not verified through a PKI. The signaling server sees connection metadata. If a TURN relay is used, it sees encrypted traffic only, but consumes ~2x bandwidth.
 - 🏠 **LAN fallback**: direct transfer on the same network, without going through the internet
 - ⚡ **WebRTC P2P**: direct peer-to-peer connection when possible
-- ✅ **Integrity verification**: SHA-256 hash on every file
+- 🔄 **TURN relay**: when NAT requires it, a Cloudflare TURN relay forwards the encrypted data
+- ✅ **Integrity verification**: SHA-256 hash verified on incoming transfers (browser → app). The hash is computed incrementally by the sender and compared by the receiver; mismatches are rejected before saving.
 - 🆓 **Open source**: AGPLv3 licensed, free, no account required
 - 💻 **Windows only** (for now; macOS and Linux in roadmap)
 
@@ -25,9 +26,10 @@ Peerino is an open-source desktop application for peer-to-peer file sharing. Sen
 
 1. Open Peerino
 2. Select the file you want to share
-3. Click **Share** — the link is copied automatically
+3. Click **Share** — the link is shown with a **Copy** button. Click Copy to copy it to the clipboard.
 4. Paste it in an email, chat, or any other channel
 5. The recipient opens the link in their browser and downloads the file
+6. The file is streamed directly from your computer via WebRTC (or a TURN relay if NAT requires it)
 
 ### Receive a file from someone who doesn't have Peerino
 
@@ -113,28 +115,30 @@ cp .env.example .env
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `TURN_URLS` | TURN server URL (Coturn) | `turn:peerino.com:3478` |
-| `TURN_AUTH_SECRET` | Shared secret with Coturn (REST scheme) | *(empty until configured)* |
-| `TURN_CRED_TTL_SECS` | Ephemeral credential TTL | `7200` (2 hours) |
-| `STUN_URLS` | Comma-separated list of STUN servers | Xiaomi, Bilibili, Yandex, Google, Cloudflare |
+| `TURN_CREDENTIALS_ENDPOINT` | URL of the Cloudflare Worker that generates TURN credentials | `https://peerino-turn-proxy.shaft-bdc.workers.dev/api/turn-credentials` |
+| `ICE_PROVIDER` | Active ICE provider: `cloudflare` \| `metered` \| `coturn` \| `static` \| `auto` | `cloudflare` |
+| `STUN_URLS` | Comma-separated list of STUN servers | Cloudflare, Google |
 | `SIGNALING_URL` | Signaling server URL | `0.peerjs.com` |
-| `P2P_WEB_URL` | Web page URL for the browser recipient | `https://peerino.com/receiver` |
+| `P2P_WEB_URL` | Base URL of the web receiver page. The link is built as `{P2P_WEB_URL}?mode=download&...`. | `https://peerino.com` |
 | `HTTP_PORT` | Local HTTP server port | `3000` |
-| `TURN_MAX_FILE_SIZE` | Max file size over TURN (bytes) | `104857600` (100 MB) |
+| `TURN_MAX_FILE_SIZE` | Max file size over TURN (bytes). Cloudflare free tier: 1 TB/month egress. | `104857600` (100 MB) |
 
-**Note**: `TURN_AUTH_SECRET` only needs to be set after configuring Coturn on your VPS. Without this value, Peerino uses STUN only (works in most cases but not on symmetric NAT).
+> **Note**: Metered is supported as an optional fallback provider. Set `ICE_PROVIDER=metered` and configure `METERED_API_KEY` / `METERED_API_BASE` to use it. Cloudflare TURN is the default.
+
+### TURN server
+
+**TURN server**: Peerino uses Cloudflare TURN for relay connections. The TURN key is kept server-side in a Cloudflare Worker, so it's never exposed in the client. The free tier includes 1 TB/month of egress traffic, which is enough for most use cases.
 
 ---
 
 ## 🔐 Privacy & Security
 
 - **End-to-end encryption**: all WebRTC connections use DTLS
-- **No central server**: files pass directly between peers
+- **No central server for file storage**: files are never stored on a remote server. On LAN and STUN, transfers are direct. When NAT requires it, a TURN relay forwards the encrypted data.
 - **No account**: no registration, no login
-- **Minimal metadata**: filename and hash are in the link (whoever has the link can download the file)
-- **Link expiration**: links expire after 24 hours
-- **Download limit**: each link has a maximum number of downloads
-- **TURN limit**: 100 MB to protect shared TURN relay bandwidth
+- **Minimal metadata**: the link contains the filename, the file hash, and the sender's Peer ID. Whoever has the link can download the file as long as the sender is online and the file is still in `shared-folder/`.
+- **Link expiration**: relay links and inbox links expire after 24 hours. Direct P2P-to-Web links do not have a time-based expiry — they work as long as the sender has the file in `shared-folder/` and Peerino is running.
+- **TURN limit**: files up to 100 MB can be transferred via TURN relay. Larger files require a direct connection (LAN or STUN). This limit protects the Cloudflare free tier (1 TB/month egress).
 
 ---
 
@@ -182,4 +186,4 @@ See [`LICENSE`](LICENSE) for the full text.
 
 ---
 
-**Peerino** — Share files. Without cloud. Without accounts. Without intermediaries.
+**Peerino** — Share files. Without cloud. Without accounts.

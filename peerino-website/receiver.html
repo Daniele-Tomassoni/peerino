@@ -836,69 +836,115 @@
             // is never set (remains 0). Without this fix, the overlimit check
             // never triggers for inbox uploads.
             function detectAndMarkPath(conn, fileSizeOverride) {
-                const pc = conn.peerConnection || (conn._pc) || null;
-                if (!pc) return;
-                // Use the passed size if available, otherwise fall back to the global.
+                // effectiveSize: se il chiamante passa un valore, usalo; altrimenti
+                // usa la variabile globale fileSize (download mode).
                 const effectiveSize = (typeof fileSizeOverride === 'number')
                     ? fileSizeOverride
                     : (typeof fileSize === 'number' ? fileSize : 0);
-                let attempts = 0;
-                const timer = setInterval(async () => {
-                    attempts++;
+
+                let detected = false;
+
+                const tryDetect = async () => {
+                    if (detected) return;
+                    // conn.peerConnection può essere null se la RTCPeerConnection
+                    // non è ancora stata creata. In quel caso aspettiamo il prossimo
+                    // tentativo (evento o timer).
+                    const pc = conn.peerConnection || conn._pc || null;
+                    if (!pc) return;
+
                     try {
                         const stats = await pc.getStats();
                         let pair = null;
                         stats.forEach((r) => {
-                            if (r.type === 'candidate-pair' &&
-                                (r.selected === true || r.nominated === true || r.state === 'succeeded')) {
-                                pair = pair || r;
+                            // Priorità: selected=true è il segnale più affidabile.
+                            // Se non c'è, accettiamo anche nominated o succeeded.
+                            if (r.type === 'candidate-pair') {
+                                if (r.selected === true) {
+                                    pair = r;
+                                } else if (!pair && (r.nominated === true || r.state === 'succeeded')) {
+                                    pair = r;
+                                }
                             }
                         });
-                        if (pair && pair.localCandidateId && pair.remoteCandidateId) {
-                            const local = stats.get(pair.localCandidateId);
-                            const remote = stats.get(pair.remoteCandidateId);
-                            const t = [local?.candidateType, remote?.candidateType];
-                            clearInterval(timer);
-                            if (t.includes('relay')) {
-                                showTurnWarning();
-                                setPhase('stun', 'fail');
-                                setPhase('turn', 'done turn');
-                                setHeaderBadge('Relay');
-                                if (effectiveSize > TURN_MAX_FILE_SIZE) {
-                                    setPhase('turn', 'done overlimit');
-                                    log('🔴 Selected path: TURN relay, file exceeds ' + (TURN_MAX_FILE_SIZE / 1048576) + 'MB limit');
-                                } else {
-                                    setPhase('turn', 'done turn');
-                                    log('🟡 Selected path: TURN relay, file within ' + (TURN_MAX_FILE_SIZE / 1048576) + 'MB limit');
-                                }
-                            } else if (t[0] === 'host' && t[1] === 'host') {
-                                hideTurnWarning();
-                                // FIX: both ICE candidates are 'host' → direct LAN connection.
-                                // Previously this branch also called setPhase('stun','done'),
-                                // which made the stepper lie: the log said "local network" but
-                                // the UI showed "STUN" green. Now the UI matches the path.
-                                setPhase('lan', 'done');
-                                setPhase('stun', 'fail');
-                                setHeaderBadge('LAN');
-                                log('🟢 Selected path: local network (host)');
-                            } else if (t.includes('srflx') || t.includes('prflx')) {
-                                hideTurnWarning();
-                                setPhase('stun', 'done');
-                                setHeaderBadge('Internet');
-                                log('🟢 Selected path: direct via STUN');
+                        if (!pair || !pair.localCandidateId || !pair.remoteCandidateId) return;
+
+                        const local = stats.get(pair.localCandidateId);
+                        const remote = stats.get(pair.remoteCandidateId);
+                        const types = [local?.candidateType, remote?.candidateType];
+                        detected = true;
+
+                        // Determina se è TURN in modo robusto:
+                        // 1. candidateType === 'relay' su uno dei due lati, OPPURE
+                        // 2. il campo url del candidato contiene 'turn:' (perché alcuni browser
+                        //    riportano candidateType come 'prflx' anche per connessioni TURN)
+                        const isRelay = types.includes('relay') ||
+                            (local?.url && typeof local.url === 'string' && local.url.startsWith('turn:')) ||
+                            (remote?.url && typeof remote.url === 'string' && remote.url.startsWith('turn:'));
+
+                        if (isRelay) {
+                            showTurnWarning();
+                            setPhase('stun', 'fail');
+                            setPhase('turn', 'done turn');
+                            setHeaderBadge('Relay');
+                            if (effectiveSize > TURN_MAX_FILE_SIZE) {
+                                setPhase('turn', 'done overlimit');
+                                log('🔴 Selected path: TURN relay, file exceeds ' + (TURN_MAX_FILE_SIZE / 1048576) + 'MB limit');
                             } else {
-                                hideTurnWarning();
-                                // Mixed / unknown ICE pair (e.g. host + srflx): relay is not
-                                // involved but the path is not a pure LAN link either.
-                                // Treat as STUN to keep the stepper truthful.
-                                setPhase('stun', 'done');
-                                setHeaderBadge('Internet');
-                                log('🟢 Selected path: ICE mixed (treating as STUN)');
+                                log('🟡 Selected path: TURN relay, file within ' + (TURN_MAX_FILE_SIZE / 1048576) + 'MB limit');
                             }
+                        } else if (types[0] === 'host' && types[1] === 'host') {
+                            hideTurnWarning();
+                            setPhase('lan', 'done');
+                            setPhase('stun', 'fail');
+                            setHeaderBadge('LAN');
+                            log('🟢 Selected path: local network (host)');
+                        } else if (types.includes('srflx') || types.includes('prflx')) {
+                            hideTurnWarning();
+                            setPhase('stun', 'done');
+                            setHeaderBadge('Internet');
+                            log('🟢 Selected path: direct via STUN');
+                        } else {
+                            hideTurnWarning();
+                            setPhase('stun', 'done');
+                            setHeaderBadge('Internet');
+                            log('🟢 Selected path: ICE mixed (treating as STUN)');
                         }
-                    } catch (e) { /* stats not ready yet */ }
-                    if (attempts > 10) clearInterval(timer);
-                }, 1000);
+                    } catch (e) {
+                        // stats non pronti, riproveremo
+                    }
+                };
+
+                // Strategia: prova subito, poi reagisci agli eventi ICE, con polling
+                // di fallback ogni 250ms per max 10s.
+                const startPolling = () => {
+                    let attempts = 0;
+                    const timer = setInterval(() => {
+                        attempts++;
+                        tryDetect();
+                        // FIX off-by-one: >= 40 tentativi (10s a 250ms) invece di > 10
+                        if (detected || attempts >= 40) clearInterval(timer);
+                    }, 250);
+                };
+
+                // Se la pc è già disponibile, avvia subito il polling.
+                // Altrimenti, aggancia gli eventi per avviarlo appena disponibile.
+                const pc = conn.peerConnection || conn._pc || null;
+                if (pc) {
+                    pc.addEventListener('connectionstatechange', tryDetect);
+                    pc.addEventListener('iceconnectionstatechange', tryDetect);
+                    startPolling();
+                } else {
+                    // La RTCPeerConnection non è ancora disponibile. Intercettiamo
+                    // l'evento 'open' della DataConnection per riprovare.
+                    conn.on('open', () => {
+                        const pc2 = conn.peerConnection || conn._pc || null;
+                        if (pc2) {
+                            pc2.addEventListener('connectionstatechange', tryDetect);
+                            pc2.addEventListener('iceconnectionstatechange', tryDetect);
+                        }
+                        startPolling();
+                    });
+                }
             }
 
             // ===== START DOWNLOAD FLOW (user confirm + LAN/WebRTC race) =====
