@@ -32,7 +32,13 @@
     <div class="app-layout">
         <!-- Header -->
         <header class="app-header">
-            <h1><img src="./icons/Square71x71Logo.png" alt="Peerino" class="header-icon"> Peerino</h1>
+            <div class="header-left">
+                <h1 class="header-title"><img src="./icons/Square71x71Logo.png" alt="Peerino" class="header-icon"> Peerino</h1>
+                <div class="header-status header-status-left"
+                     id="header-status-left"
+                     aria-live="polite"
+                     aria-atomic="true"></div>
+            </div>
             <div class="header-center">
                 <button class="help-btn" aria-label="How Peerino works">
                     <span class="help-icon">?</span>
@@ -59,6 +65,10 @@
                 </button>
             </div>
             <div class="header-right">
+                <div class="header-status header-status-right"
+                     id="header-status-right"
+                     aria-live="polite"
+                     aria-atomic="true"></div>
                 <span id="server-led" class="led-indicator led-off" title="Server Inactive">●</span>
                 <span id="server-status-text">Inactive</span>
             </div>
@@ -206,7 +216,6 @@
 
         <!-- Footer -->
         <footer class="app-footer">
-            <p id="footer-status" class="status"></p>
             <div class="legal-disclaimer">
                 ⚠️ <strong>Disclaimer:</strong> You are solely responsible for the files
                 you share or download. Only open links from people you trust. Peerino does

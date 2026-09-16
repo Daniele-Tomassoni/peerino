@@ -149,14 +149,13 @@ const downloadProgressListLeft = document.getElementById('download-progress-list
 const uploadProgressContainerRight = document.getElementById('upload-progress-container') as HTMLDivElement;
 const uploadProgressListRight = document.getElementById('upload-progress-list') as HTMLDivElement;
 
-// Footer
-const footerStatus = document.getElementById('footer-status') as HTMLParagraphElement;
-
 // State
 let serverRunning = false;
 let currentNetworkInfo: NetworkInfo | null = null;
 let currentContext: 'local' | 'internet' = 'local';
 const copiedLinkFiles = new Map<string, number>();
+let turnLimitWarningShown = false;
+let headerStatusTimers: { left?: number; right?: number } = {};
 
 // P2P
 let p2pConfig: P2pConfig = {
@@ -379,6 +378,35 @@ function getErrorMessage(error: unknown): string {
     return 'Unknown error';
 }
 
+type HeaderStatusType = 'success' | 'error' | 'info' | 'warning';
+
+function showHeaderStatus(message: string, type: HeaderStatusType): void {
+    const isLeft = (type === 'success' || type === 'info');
+    const slotId = isLeft ? 'header-status-left' : 'header-status-right';
+    const slot = document.getElementById(slotId);
+    if (!slot) return;
+
+    const timerKey = isLeft ? 'left' : 'right';
+    if (headerStatusTimers[timerKey]) {
+        clearTimeout(headerStatusTimers[timerKey]);
+    }
+
+    slot.textContent = message;
+    slot.className = `header-status ${isLeft ? 'header-status-left' : 'header-status-right'}`;
+    if (type === 'info') slot.classList.add('header-status-info');
+    if (type === 'warning') slot.classList.add('header-status-warning');
+
+    void slot.offsetWidth;
+    slot.classList.add('visible');
+
+    const duration = (type === 'success' || type === 'info') ? 2500 : 5000;
+    headerStatusTimers[timerKey] = window.setTimeout(() => {
+        slot.textContent = '';
+        slot.className = `header-status ${isLeft ? 'header-status-left' : 'header-status-right'}`;
+        headerStatusTimers[timerKey] = undefined;
+    }, duration);
+}
+
 function formatSize(bytes: number): string {
     const units = ['B', 'KB', 'MB', 'GB', 'TB'];
     if (bytes === 0) return '0 B';
@@ -514,22 +542,20 @@ function renderUploadProgressList(): void {
     // blocked. The browser receiver already shows the error, but the sender's UI
     // had no indication.
     const turnOverlimitRows = uploadProgressListRight.querySelectorAll<HTMLElement>('.conn-badge.turn-overlimit');
-    if (turnOverlimitRows.length > 0) {
+    if (turnOverlimitRows.length > 0 && !turnLimitWarningShown) {
+        turnLimitWarningShown = true;
         const firstRow = turnOverlimitRows[0].closest<HTMLElement>('.upload-item');
         if (firstRow && !firstRow.classList.contains('turn-limit-warned')) {
             firstRow.classList.add('turn-limit-warned');
             const filename = firstRow.querySelector<HTMLElement>('.download-filename')?.textContent || '';
-            if (footerStatus) {
-                footerStatus.textContent = '⚠️ File exceeds TURN size limit: ' + filename;
-                footerStatus.className = 'status warning';
-            }
+            showHeaderStatus(`⚠️ File exceeds TURN size limit: ${filename}`, 'warning');
         }
-    } else {
+    } else if (turnOverlimitRows.length === 0) {
+        turnLimitWarningShown = false;
         // Clear any previous TURN limit warning if no overlimit rows remain
         const warned = uploadProgressListRight.querySelector<HTMLElement>('.upload-item.turn-limit-warned');
-        if (warned && footerStatus && footerStatus.textContent.startsWith('⚠️ File exceeds')) {
-            footerStatus.textContent = '';
-            footerStatus.className = 'status';
+        if (warned) {
+            warned.classList.remove('turn-limit-warned');
         }
     }
 
@@ -884,8 +910,7 @@ async function ensureServerRunning(): Promise<void> {
 async function handleGenerateLocalLink(): Promise<void> {
     const selectedHash = getSelectedHash();
     if (!selectedHash) {
-        footerStatus.textContent = '❌ Select a file first';
-        footerStatus.className = 'status error';
+        showHeaderStatus('❌ Select a file first', 'error');
         return;
     }
     generateLocalLinkBtn.disabled = true;
@@ -894,8 +919,7 @@ async function handleGenerateLocalLink(): Promise<void> {
         const link = await invoke<string>('generate_local_link', { hash: selectedHash });
         if (localLinkDisplay) localLinkDisplay.textContent = link;
         if (localLinkContainer) localLinkContainer.classList.remove('hidden');
-        footerStatus.textContent = '✅ Local link generated!';
-        footerStatus.className = 'status success';
+        showHeaderStatus('✅ Local link generated!', 'success');
         // Mark file as having its link generated (shows checkmark in file list)
         copiedLinkFiles.set(selectedHash, Date.now());
         renderFiles();
@@ -905,8 +929,7 @@ async function handleGenerateLocalLink(): Promise<void> {
             renderFiles();
         }, 10000);
     } catch (error) {
-        footerStatus.textContent = `❌ ${getErrorMessage(error)}`;
-        footerStatus.className = 'status error';
+        showHeaderStatus(`❌ ${getErrorMessage(error)}`, 'error');
     }
     generateLocalLinkBtn.disabled = false;
     generateLocalLinkBtn.textContent = '🔗 Generate Local Link';
@@ -915,12 +938,9 @@ async function handleGenerateLocalLink(): Promise<void> {
 async function handleOpenFolder(): Promise<void> {
     try {
         await invoke('open_shared_folder');
-        footerStatus.textContent = '✅ Shared folder opened';
-        footerStatus.className = 'status success';
-        setTimeout(() => { footerStatus.textContent = ''; footerStatus.className = 'status'; }, 2000);
+        showHeaderStatus('✅ Shared folder opened', 'success');
     } catch (error) {
-        footerStatus.textContent = `❌ ${getErrorMessage(error)}`;
-        footerStatus.className = 'status error';
+        showHeaderStatus(`❌ ${getErrorMessage(error)}`, 'error');
     }
 }
 
@@ -2000,8 +2020,7 @@ async function loadPeers(): Promise<void> {
 async function generateWebLink(): Promise<void> {
     const selectedHash = getSelectedHash();
     if (!selectedHash) {
-        footerStatus.textContent = '❌ Select a file before generating web link';
-        footerStatus.className = 'status error';
+        showHeaderStatus('❌ Select a file before generating web link', 'error');
         return;
     }
     generateWebLinkBtn.disabled = true;
@@ -2016,8 +2035,7 @@ async function generateWebLink(): Promise<void> {
         });
         if (webLinkDisplay) webLinkDisplay.textContent = link;
         if (webLinkContainer) webLinkContainer.classList.remove('hidden');
-        footerStatus.textContent = '✅ Web link generated!';
-        footerStatus.className = 'status success';
+        showHeaderStatus('✅ Web link generated!', 'success');
         // Mark file as having its link generated (shows checkmark in file list)
         copiedLinkFiles.set(selectedHash, Date.now());
         renderFiles();
@@ -2027,8 +2045,7 @@ async function generateWebLink(): Promise<void> {
             renderFiles();
         }, 10000);
     } catch (error) {
-        footerStatus.textContent = `❌ ${getErrorMessage(error)}`;
-        footerStatus.className = 'status error';
+        showHeaderStatus(`❌ ${getErrorMessage(error)}`, 'error');
     }
     generateWebLinkBtn.disabled = false;
     generateWebLinkBtn.textContent = '🔗 Generate Link';
@@ -2055,12 +2072,9 @@ function log(message: string): void {
 async function copyToClipboard(text: string, successMsg: string): Promise<void> {
     try {
         await writeText(text);
-        footerStatus.textContent = `✅ ${successMsg}`;
-        footerStatus.className = 'status success';
-        setTimeout(() => { footerStatus.textContent = ''; footerStatus.className = 'status'; }, 2000);
+        showHeaderStatus(`✅ ${successMsg}`, 'success');
     } catch (error) {
-        footerStatus.textContent = `❌ ${getErrorMessage(error)}`;
-        footerStatus.className = 'status error';
+        showHeaderStatus(`❌ ${getErrorMessage(error)}`, 'error');
     }
 }
 
@@ -2079,11 +2093,9 @@ async function handleCreateInboxLocal(): Promise<void> {
         const link = await invoke<string>('create_inbox_local');
         if (inboxLocalLinkEl) inboxLocalLinkEl.textContent = link;
         if (inboxLocalLinkContainer) inboxLocalLinkContainer.classList.remove('hidden');
-        footerStatus.textContent = '✅ Local inbox link generated!';
-        footerStatus.className = 'status success';
+        showHeaderStatus('✅ Local inbox link generated!', 'success');
     } catch (error) {
-        footerStatus.textContent = `❌ ${getErrorMessage(error)}`;
-        footerStatus.className = 'status error';
+        showHeaderStatus(`❌ ${getErrorMessage(error)}`, 'error');
     }
     createInboxLocalBtn.disabled = false;
     createInboxLocalBtn.textContent = '📥 Create Local Inbox';
@@ -2098,11 +2110,9 @@ async function handleCreateInboxInternet(): Promise<void> {
         const link = await invoke<string>('create_inbox');
         if (inboxInternetLinkEl) inboxInternetLinkEl.textContent = link;
         if (inboxInternetLinkContainer) inboxInternetLinkContainer.classList.remove('hidden');
-        footerStatus.textContent = '✅ Internet inbox link generated!';
-        footerStatus.className = 'status success';
+        showHeaderStatus('✅ Internet inbox link generated!', 'success');
     } catch (error) {
-        footerStatus.textContent = `❌ ${getErrorMessage(error)}`;
-        footerStatus.className = 'status error';
+        showHeaderStatus(`❌ ${getErrorMessage(error)}`, 'error');
     }
     createInboxInternetBtn.disabled = false;
     createInboxInternetBtn.textContent = '📥 Create Inbox';
@@ -2411,17 +2421,8 @@ document.addEventListener('DOMContentLoaded', async () => {
                     activeDownloads.delete(key);
                     updateDownloadProgress(Array.from(activeDownloads.values()));
                 }
-                // Visual feedback in the footer
-                if (footerStatus) {
-                    footerStatus.textContent = '⏹ Download cancelled';
-                    footerStatus.className = 'status';
-                    setTimeout(() => {
-                        if (footerStatus.textContent === '⏹ Download cancelled') {
-                            footerStatus.textContent = '';
-                            footerStatus.className = 'status';
-                        }
-                    }, 2000);
-                }
+                // Visual feedback in the header
+                showHeaderStatus('⏹ Download cancelled', 'info');
             } else {
                 const row = uploadProgressListRight?.querySelector(
                     `[data-upload-id="${CSS.escape(key)}"]`
@@ -2441,16 +2442,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     activeUploads.delete(key);
                     renderUploadProgressList();
                 }
-                if (footerStatus) {
-                    footerStatus.textContent = '⏹ Upload cancelled';
-                    footerStatus.className = 'status';
-                    setTimeout(() => {
-                        if (footerStatus.textContent === '⏹ Upload cancelled') {
-                            footerStatus.textContent = '';
-                            footerStatus.className = 'status';
-                        }
-                    }, 2000);
-                }
+                showHeaderStatus('⏹ Upload cancelled', 'info');
             }
         } catch (error) {
             console.error('Cancel error:', error);

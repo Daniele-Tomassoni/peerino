@@ -22,6 +22,31 @@
     padding: 0;
 }
 
+/* ===== SCROLLBAR (global) ===== */
+/* Thin, discreet scrollbars matching the dark/blue theme */
+* {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(56, 189, 248, 0.3) transparent;
+}
+
+*::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+    background: rgba(56, 189, 248, 0.3);
+    border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+    background: rgba(56, 189, 248, 0.5);
+}
+
 :root {
     /* Background */
     --bg-0: #070B14;
@@ -106,6 +131,56 @@ body {
     align-items: center;
     border-bottom: 1px solid var(--panel-border);
     height: 60px;
+}
+
+/* ===== HEADER LEFT / RIGHT WRAPPERS ===== */
+.header-left,
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+    min-width: 0;
+}
+
+/* ===== HEADER STATUS SLOTS ===== */
+.header-status {
+    font-size: 0.8rem;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+    max-width: 200px;
+}
+
+.header-status.visible {
+    opacity: 1;
+}
+
+.header-status-left {
+    color: var(--green, #22c55e);
+}
+
+.header-status-right {
+    color: var(--red, #ef4444);
+}
+
+.header-status.header-status-info {
+    color: var(--text-dim, #94a3b8);
+}
+
+.header-status.header-status-warning {
+    color: var(--yellow, #eab308);
+}
+
+@media (max-width: 1100px) {
+    .header-status {
+        font-size: 0.75rem;
+        max-width: 120px;
+    }
 }
 
 .app-header h1 {
@@ -358,6 +433,7 @@ body {
     max-height: 65%;
     overflow-y: auto;
     overflow-x: hidden;
+    scrollbar-gutter: stable;
 }
 
 /* Link display: scrollable, compact */
@@ -519,6 +595,7 @@ body {
     max-height: 45vh;
     overflow-y: auto;
     overflow-x: hidden;
+    scrollbar-gutter: stable;
 }
 
 .progress-header {
