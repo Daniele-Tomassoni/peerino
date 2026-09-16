@@ -82,6 +82,7 @@ pub struct IceServerEntry {
 #[derive(Debug, Deserialize)]
 struct MeteredResponse {
     #[serde(default)]
+    #[serde(rename = "iceServers")]
     ice_servers: Option<Vec<IceServerEntry>>,
 }
 
@@ -231,6 +232,10 @@ async fn fetch_metered(api_key: &str) -> Result<Vec<IceServerEntry>, String> {
         .text()
         .await
         .map_err(|e| format!("read body: {}", e))?;
+
+    // Debug: log response body (first 200 chars) for diagnosis
+    log::debug!("Metered response body (first 200 chars): {}",
+        if body_text.len() > 200 { &body_text[..200] } else { &body_text });
 
     // The metered response can have two forms:
     //   A) { "iceServers": [...] }
