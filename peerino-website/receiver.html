@@ -408,6 +408,43 @@
             border-bottom: 1px solid rgba(255, 255, 255, 0.03);
         }
 
+        /* ===== LOG DETAILS (collapsible wrapper) ===== */
+        .log-details {
+            margin-top: 14px;
+            border-top: 1px solid var(--panel-border);
+            padding-top: 12px;
+        }
+        .log-details summary {
+            cursor: pointer;
+            font-size: 0.85rem;
+            color: var(--text-dim);
+            padding: 6px 0;
+            user-select: none;
+            list-style: none;
+        }
+        .log-details summary::-webkit-details-marker { display: none; }
+        .log-details summary::before {
+            content: '\25B8 ';
+            display: inline-block;
+            transition: transform 0.2s;
+            color: var(--accent);
+        }
+        .log-details[open] summary::before {
+            transform: rotate(90deg);
+        }
+        .log-details summary:hover {
+            color: var(--accent);
+        }
+        .log-details:not([open]) .log-container {
+            display: none;
+        }
+
+        /* ===== LOG COLORAZIONE PER LIVELLO ===== */
+        .log-container div.log-error { color: var(--red); }
+        .log-container div.log-warn  { color: var(--yellow); }
+        .log-container div.log-info  { color: var(--text-dim); }
+        .log-container div.log-debug { color: var(--text-dim); opacity: 0.6; }
+
         /* ===== FOOTER ===== */
         .footer {
             margin-top: 14px;
@@ -457,7 +494,7 @@
             border-radius: var(--radius-sm);
             font-size: 0.85rem;
             color: var(--text-dim);
-            animation: ctaFadeIn 0.4s ease;
+            animation: ctaFadeIn 0.4s ease, ctaPulse 3s ease-in-out 0.4s 2;
         }
 
         .peerino-cta.hidden {
@@ -488,6 +525,17 @@
         @keyframes ctaFadeIn {
             from { opacity: 0; transform: translateY(4px); }
             to { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes ctaPulse {
+            0%, 100% { opacity: 0.7; }
+            50%      { opacity: 1.0; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            .peerino-cta {
+                animation: ctaFadeIn 0.4s ease;
+            }
         }
     </style>
 </head>
@@ -571,8 +619,11 @@
             </div>
         </div>
 
-        <!-- LOG -->
-        <div id="logContainer" class="log-container">📋 Real-time log...</div>
+        <!-- LOG (collassato di default) -->
+        <details id="log-details" class="log-details">
+            <summary>Show technical details</summary>
+            <div id="logContainer" class="log-container"></div>
+        </details>
 
         <!-- FOOTER -->
         <div class="footer">🔒 Direct and encrypted connection (WebRTC)</div>
@@ -581,6 +632,8 @@
     <script>
         (function() {
             'use strict';
+
+            const DEBUG = false;
 
             // ===== DOM REFS =====
             const statusEl = document.getElementById('status');
@@ -672,24 +725,31 @@
             }
 
             // ===== LOG =====
-            // Security notes:
-            // - textContent only => no XSS via logged data
+            // - Dati sensibili (peer ID, hash) mascherati nel DOM visibile
+            //   all'utente. I valori completi restano in console.log, visibile
+            //   solo via DevTools.
             // - DOM capped to the last 200 entries (no flooding on big transfers)
-            // - No sensitive details here: peer IDs, signaling hosts, TURN state,
-            //   hashes and raw WebRTC error messages go to console.error only
-            //   (visible only via explicit DevTools inspection).
+            // - Errori WebRTC raw vanno in console.error, mai nel DOM.
+            const LOG_LEVELS = { ERROR: 0, WARN: 1, INFO: 2, DEBUG: 3 };
             const MAX_LOG_ENTRIES = 200;
-            function log(msg) {
-                console.log(msg);
-                if (logContainer) {
-                    const div = document.createElement('div');
-                    div.textContent = msg;
-                    logContainer.appendChild(div);
-                    while (logContainer.childElementCount > MAX_LOG_ENTRIES) {
-                        logContainer.removeChild(logContainer.firstElementChild);
-                    }
-                    logContainer.scrollTop = logContainer.scrollHeight;
+
+            function log(msg, level = LOG_LEVELS.INFO) {
+                console.log(msg);  // console completa, per debug via DevTools
+                if (!logContainer) return;
+
+                // Maschera dati sensibili nel DOM (non in console)
+                const safe = msg
+                    .replace(/(peerino-[a-f0-9-]{8,})/gi, 'peerino-***')
+                    .replace(/(hash=[a-f0-9]{8,})/gi, 'hash=***');
+
+                const div = document.createElement('div');
+                div.textContent = safe;
+                div.className = 'log-' + ['error','warn','info','debug'][level];
+                logContainer.appendChild(div);
+                while (logContainer.childElementCount > MAX_LOG_ENTRIES) {
+                    logContainer.removeChild(logContainer.firstElementChild);
                 }
+                logContainer.scrollTop = logContainer.scrollHeight;
             }
 
             function setStatus(text, type) {
@@ -992,7 +1052,7 @@
                     return;
                 }
 
-                log(`🔗 Connecting to ${senderId}`);
+                log('🔗 Connecting to sender...');
                 setStatus('🔗 Connecting to sender...', 'loading');
 
                 // Mirror the sender's signaling + ICE config so the WebRTC
@@ -1041,7 +1101,7 @@
                     }, 30000);
 
                     connection.on('data', (data) => {
-                        log('📥 Data received from connection');
+                        if (DEBUG) log('📥 Data received from connection', LOG_LEVELS.DEBUG);
                         handleData(data);
                     });
 
@@ -1051,7 +1111,7 @@
                         setStatus('✅ Connected. Requesting file...', 'loading');
                         const request = { type: 'request_file', hash: fileHash || '' };
                         connection.send(JSON.stringify(request));
-                        log(`📤 File request sent: hash=${request.hash}`);
+                        log('📤 File request sent');
                     });
 
                     connection.on('close', () => {
@@ -1079,7 +1139,7 @@
 
             // ===== HANDLE DATA (Download) =====
             function handleData(data) {
-                log(`📦 Data received: type=${typeof data}, constructor=${data.constructor?.name || 'unknown'}`);
+                if (DEBUG) log(`📦 Data received: type=${typeof data}`, LOG_LEVELS.DEBUG);
 
                 if (typeof data === 'string') {
                     try {
@@ -1259,7 +1319,7 @@
                    return;
                }
 
-               log(`🔗 Connecting to ${senderId} for upload...`);
+               log('🔗 Connecting to sender for upload...');
                setStatus('🔗 Connecting to sender...', 'loading');
 
                // Build ICE servers from link params (same config as download mode)
