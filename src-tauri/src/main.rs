@@ -93,6 +93,7 @@ fn main() {
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
     let env_candidates = [
         format!("{}/.env", manifest_dir),  // src-tauri/.env (dev + canonical)
+        format!("{}/../.env", manifest_dir), // workspace_root/.env (dev mode, one level above CARGO_MANIFEST_DIR)
         format!("{}/.env", app_dir_env),   // executable/.env (release portable)
         ".env".to_string(),                 // CWD/.env
         format!("{}/../.env", app_dir_env), // executable/../.env

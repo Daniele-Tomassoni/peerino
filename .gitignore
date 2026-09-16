@@ -82,6 +82,8 @@ debug totale.pdf
 turnserver.log
 error.log
 access.log
+log_metered.txt
+log_*.txt
 
 # ==============================================================
 # FILE TEMPORANEI E SISTEMA

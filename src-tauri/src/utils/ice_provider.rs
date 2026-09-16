@@ -42,6 +42,39 @@ use std::time::Duration;
 const METERED_DEFAULT_BASE: &str = "https://peerino.metered.live/api/v1";
 const FETCH_TIMEOUT_SECS: u64 = 10;
 
+/// Explicit provider preference from ICE_PROVIDER env var.
+/// Valori validi: "metered" | "coturn" | "static".
+/// Se non impostato, comportamento auto (Metered → Coturn → Static).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum IceProviderPreference {
+    #[default]
+    Auto,
+    Metered,
+    Coturn,
+    Static,
+}
+
+impl IceProviderPreference {
+    fn from_env() -> Self {
+        match std::env::var("ICE_PROVIDER")
+            .unwrap_or_default()
+            .trim()
+            .to_lowercase()
+            .as_str()
+        {
+            "metered" => IceProviderPreference::Metered,
+            "coturn"  => IceProviderPreference::Coturn,
+            "static"  => IceProviderPreference::Static,
+            other => {
+                if !other.is_empty() {
+                    log::warn!("⚠️ ICE_PROVIDER={} non valido, uso auto", other);
+                }
+                IceProviderPreference::Auto
+            }
+        }
+    }
+}
+
 /// Currently active provider, chosen based on env vars.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum IceProviderKind {
@@ -70,7 +103,7 @@ pub struct IceResolution {
 /// WebRTC `RTCIceServer` (see moz:// RTCIceServer).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IceServerEntry {
-    #[serde(rename = "urls")]
+    #[serde(default, deserialize_with = "deserialize_urls")]
     pub urls: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub username: Option<String>,
@@ -78,83 +111,177 @@ pub struct IceServerEntry {
     pub credential: Option<String>,
 }
 
-/// JSON response from the metered API (documented format).
-#[derive(Debug, Deserialize)]
-struct MeteredResponse {
-    #[serde(default)]
-    #[serde(rename = "iceServers")]
-    ice_servers: Option<Vec<IceServerEntry>>,
+fn deserialize_urls<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where D: serde::Deserializer<'de> {
+    let v = serde_json::Value::deserialize(deserializer)?;
+    match v {
+        serde_json::Value::String(s) => Ok(vec![s]),
+        serde_json::Value::Array(arr) => arr
+            .into_iter()
+            .map(|x| x.as_str().map(String::from).ok_or_else(|| serde::de::Error::custom("not a string")))
+            .collect(),
+        _ => Err(serde::de::Error::custom("urls must be string or array")),
+    }
 }
 
 /// Select and use the appropriate provider. Never blocking: in case of error
 /// on metered network, automatic fallback to coturn or static STUN.
 pub async fn fetch_ice_servers(ttl_secs: Option<u64>) -> IceResolution {
-    // Provider 1: metered.ca REST API (if METERED_API_KEY is present)
-    if let Ok(api_key) = std::env::var("METERED_API_KEY") {
-        if !api_key.trim().is_empty() {
-            match fetch_metered(&api_key).await {
-                Ok(entries) => {
-                    log::info!(
-                        "✅ ICE servers fetched from metered.ca ({} entries)",
-                        entries.len()
-                    );
-                    return IceResolution {
-                        provider: IceProviderKind::Metered,
-                        config: IceLinkConfig {
-                            signaling_url: std::env::var("SIGNALING_URL")
-                                .ok()
-                                .filter(|s| !s.is_empty()),
-                            stun_urls: vec![],
-                            // The turn fields are not used by the browser when
-                            // they arrive via metered_entries; we leave a placeholder.
-                            turn: None,
-                        },
-                        warning: None,
-                        metered_entries: Some(entries),
-                    };
-                }
-                Err(e) => {
-                    log::warn!(
-                        "⚠️ metered.ca fetch failed: {}. Falling back to coturn/static STUN.",
-                        e
-                    );
-                    let cfg = if let Some(ttl) = ttl_secs {
-                        ice_link_config_from_env_with_ttl(ttl)
-                    } else {
-                        ice_link_config_from_env()
-                    };
-                    let provider = if cfg.turn.is_some() {
-                        IceProviderKind::CoturnRest
-                    } else {
-                        IceProviderKind::StaticOnly
-                    };
-                    return IceResolution {
-                        provider,
-                        config: cfg,
-                        warning: Some(format!("metered_unavailable: {}", e)),
-                        metered_entries: None,
-                    };
-                }
+    let preference = IceProviderPreference::from_env();
+    log::info!("[ICE] Provider preference: {:?}", preference);
+
+    match preference {
+        IceProviderPreference::Static => {
+            log::info!("[ICE] StaticOnly richiesto");
+            IceResolution {
+                provider: IceProviderKind::StaticOnly,
+                config: ice_link_config_from_env(),
+                warning: None,
+                metered_entries: None,
             }
         }
-    }
 
-    // Provider 2: coturn REST (if TURN_AUTH_SECRET + TURN_URLS are present)
-    let cfg = if let Some(ttl) = ttl_secs {
-        ice_link_config_from_env_with_ttl(ttl)
-    } else {
-        ice_link_config_from_env()
-    };
-    let provider = if cfg.turn.is_some() {
-        IceProviderKind::CoturnRest
-    } else {
-        IceProviderKind::StaticOnly
-    };
-    IceResolution {
-        provider,
-        config: cfg,
-        warning: None,
-        metered_entries: None,
+        IceProviderPreference::Metered => {
+            if let Ok(api_key) = std::env::var("METERED_API_KEY") {
+                if !api_key.trim().is_empty() {
+                    match fetch_metered(&api_key).await {
+                        Ok(entries) => {
+                            log::info!(
+                                "✅ ICE servers fetched from metered.ca ({} entries)",
+                                entries.len()
+                            );
+                            return IceResolution {
+                                provider: IceProviderKind::Metered,
+                                config: IceLinkConfig {
+                                    signaling_url: std::env::var("SIGNALING_URL")
+                                        .ok()
+                                        .filter(|s| !s.is_empty()),
+                                    stun_urls: vec![],
+                                    turn: None,
+                                },
+                                warning: None,
+                                metered_entries: Some(entries),
+                            };
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "⚠️ metered.ca fetch failed: {}. Fallback a StaticOnly (NON Coturn).",
+                                e
+                            );
+                            return IceResolution {
+                                provider: IceProviderKind::StaticOnly,
+                                config: ice_link_config_from_env(),
+                                warning: Some(format!("metered_unavailable: {}", e)),
+                                metered_entries: None,
+                            };
+                        }
+                    }
+                }
+            }
+            log::warn!(
+                "⚠️ ICE_PROVIDER=metered ma METERED_API_KEY non impostato. Fallback a StaticOnly."
+            );
+            IceResolution {
+                provider: IceProviderKind::StaticOnly,
+                config: ice_link_config_from_env(),
+                warning: Some("metered_required_but_missing".to_string()),
+                metered_entries: None,
+            }
+        }
+
+        IceProviderPreference::Coturn => {
+            let cfg = if let Some(ttl) = ttl_secs {
+                ice_link_config_from_env_with_ttl(ttl)
+            } else {
+                ice_link_config_from_env()
+            };
+            if cfg.turn.is_none() {
+                log::warn!(
+                    "⚠️ ICE_PROVIDER=coturn ma TURN_AUTH_SECRET o TURN_URLS non impostati. Fallback a StaticOnly."
+                );
+                return IceResolution {
+                    provider: IceProviderKind::StaticOnly,
+                    config: ice_link_config_from_env(),
+                    warning: Some("coturn_required_but_missing".to_string()),
+                    metered_entries: None,
+                };
+            }
+            IceResolution {
+                provider: IceProviderKind::CoturnRest,
+                config: cfg,
+                warning: None,
+                metered_entries: None,
+            }
+        }
+
+        IceProviderPreference::Auto => {
+            log::warn!("ICE_PROVIDER non impostato, uso fallback auto");
+            // Provider 1: metered.ca REST API (if METERED_API_KEY is present)
+            if let Ok(api_key) = std::env::var("METERED_API_KEY") {
+                if !api_key.trim().is_empty() {
+                    match fetch_metered(&api_key).await {
+                        Ok(entries) => {
+                            log::info!(
+                                "✅ ICE servers fetched from metered.ca ({} entries)",
+                                entries.len()
+                            );
+                            return IceResolution {
+                                provider: IceProviderKind::Metered,
+                                config: IceLinkConfig {
+                                    signaling_url: std::env::var("SIGNALING_URL")
+                                        .ok()
+                                        .filter(|s| !s.is_empty()),
+                                    stun_urls: vec![],
+                                    turn: None,
+                                },
+                                warning: None,
+                                metered_entries: Some(entries),
+                            };
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "⚠️ metered.ca fetch failed: {}. Falling back to coturn/static STUN.",
+                                e
+                            );
+                            let cfg = if let Some(ttl) = ttl_secs {
+                                ice_link_config_from_env_with_ttl(ttl)
+                            } else {
+                                ice_link_config_from_env()
+                            };
+                            let provider = if cfg.turn.is_some() {
+                                IceProviderKind::CoturnRest
+                            } else {
+                                IceProviderKind::StaticOnly
+                            };
+                            return IceResolution {
+                                provider,
+                                config: cfg,
+                                warning: Some(format!("metered_unavailable: {}", e)),
+                                metered_entries: None,
+                            };
+                        }
+                    }
+                }
+            }
+
+            // Provider 2: coturn REST (if TURN_AUTH_SECRET + TURN_URLS are present)
+            let cfg = if let Some(ttl) = ttl_secs {
+                ice_link_config_from_env_with_ttl(ttl)
+            } else {
+                ice_link_config_from_env()
+            };
+            let provider = if cfg.turn.is_some() {
+                IceProviderKind::CoturnRest
+            } else {
+                IceProviderKind::StaticOnly
+            };
+            IceResolution {
+                provider,
+                config: cfg,
+                warning: None,
+                metered_entries: None,
+            }
+        }
     }
 }
 
@@ -209,8 +336,17 @@ async fn fetch_metered(api_key: &str) -> Result<Vec<IceServerEntry>, String> {
     let base = std::env::var("METERED_API_BASE")
         .ok()
         .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| METERED_DEFAULT_BASE.to_string());
-    let url = format!("{}/turn/credentials?apiKey={}", base, api_key);
+        .unwrap_or_else(|| METERED_DEFAULT_BASE.to_string())
+        .trim()
+        .trim_end_matches('/')
+        .to_string();
+
+    if !base.starts_with("http://") && !base.starts_with("https://") {
+        return Err(format!(
+            "METERED_API_BASE malformata (manca http:// o https://): {:?}",
+            base
+        ));
+    }
 
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(FETCH_TIMEOUT_SECS))
@@ -218,7 +354,8 @@ async fn fetch_metered(api_key: &str) -> Result<Vec<IceServerEntry>, String> {
         .map_err(|e| format!("reqwest build error: {}", e))?;
 
     let resp = client
-        .get(&url)
+        .get(format!("{}/turn/credentials", base))
+        .query(&[("apiKey", api_key.trim())])
         .header("Accept", "application/json")
         .send()
         .await
@@ -237,31 +374,25 @@ async fn fetch_metered(api_key: &str) -> Result<Vec<IceServerEntry>, String> {
     log::debug!("Metered response body (first 200 chars): {}",
         if body_text.len() > 200 { &body_text[..200] } else { &body_text });
 
-    // The metered response can have two forms:
-    //   A) { "iceServers": [...] }
-    //   B) [...]  (direct array, alternative documentation)
-    if let Ok(parsed) = serde_json::from_str::<MeteredResponse>(&body_text) {
-        if let Some(entries) = parsed.ice_servers {
-            if !entries.is_empty() {
-                return Ok(entries);
-            }
-        }
-    }
-    if let Ok(entries) = serde_json::from_str::<Vec<IceServerEntry>>(&body_text) {
-        if !entries.is_empty() {
-            return Ok(entries);
-        }
+    // The Metered API returns a top-level JSON array of IceServerEntry,
+    // not an object with an "iceServers" field. Example:
+    // [
+    //   {"urls":"stun:stun.relay.metered.ca:80"},
+    //   {"urls":"turn:global.relay.metered.ca:80","username":"...","credential":"..."},
+    //   ...
+    // ]
+    let entries: Vec<IceServerEntry> = serde_json::from_str(&body_text)
+        .map_err(|e| {
+            let preview: String = body_text.chars().take(300).collect();
+            format!("metered API: failed to parse ice servers array: {}. Body (first 300 chars): {}", e, preview)
+        })?;
+
+    if entries.is_empty() {
+        return Err("metered API: empty ice servers array".to_string());
     }
 
-    // Diagnostics: the response does not contain a valid ice servers array.
-    // Log the body (first 500 chars) to aid debugging (e.g. free plan
-    // metered returns an error message, not an array).
-    let preview: String = body_text.chars().take(500).collect();
-    log::warn!("metered API: invalid response (body preview): {}", preview);
-    Err(format!(
-        "metered API: response does not contain ice servers. Body: {}",
-        preview
-    ))
+    log::info!("[Metered] Parsed {} ice servers successfully", entries.len());
+    Ok(entries)
 }
 
 #[cfg(test)]
