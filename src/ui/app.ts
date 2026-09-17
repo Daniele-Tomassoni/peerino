@@ -195,6 +195,8 @@ interface IncomingUpload {
     /** FIX: upload_complete idempotency. Prevents double send if both
      *  upload_end handler and auto-finalization try to confirm. */
     uploadCompleteSent: boolean;
+    /** FIX: cancellation flag — chunks arriving after cancel are ignored */
+    cancelled: boolean;
 }
 const incomingUploads = new Map<string, IncomingUpload>();
 
@@ -1691,7 +1693,8 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                     receivedBytes: 0,
                     startTime: Date.now(),
                     finalized: false,
-                    uploadCompleteSent: false
+                    uploadCompleteSent: false,
+                    cancelled: false
                 };
                 incomingUploads.set(conn.peer, upload);
 
@@ -1762,175 +1765,180 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
         } else {
             chunk = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
         }
-        
-                const upload = incomingUploads.get(conn.peer);
-                if (upload) {
-                    // Call append_incoming_chunk to write incrementally to disk
-                    try {
-                        log('📌 append_incoming_chunk with peerId: ' + maskPeerId(conn.peer) + ', chunk size: ' + chunk.length);
-                        console.log('Full peerId (debug):', conn.peer);
-                        await invoke('append_incoming_chunk', {
-                            peerId: conn.peer,
-                            chunk: chunk
-                        });
-                        upload.receivedBytes += chunk.length;
-                        const progress = Math.round((upload.receivedBytes / upload.size) * 100);
-                        log(`📥 Received upload chunk: ${progress}%`);
 
-                        // ULTRA-ROBUST auto-finalize: when ALL bytes declared in
-                        // upload_file have been received and written to disk, finalize
-                        // IMMEDIATELY. This does NOT depend on the out-of-order
-                        // `upload_end` text message from PeerJS, which can arrive
-                        // before the last binary chunks are processed.
-                        // This eliminates the root cause of hash mismatch.
-                        if (!upload.finalized && upload.receivedBytes >= upload.size) {
-                            upload.finalized = true;
-                            log('✅ All bytes received (' + upload.receivedBytes + '/' + upload.size + '), auto-finalizing...');
-                            // FIX HIGH: do NOT delete incomingUploads BEFORE finalizeIncomingUpload.
-                            // If finalize fails (e.g. hash mismatch), the entry must remain
-                            // to allow a retry from the browser. finalizeIncomingUpload
-                            // already sends `upload_complete` to the browser on success.
-                            await finalizeIncomingUpload(conn, upload);
-                            incomingUploads.delete(conn.peer);
-                            return;
-                        }
+        const upload = incomingUploads.get(conn.peer);
+        if (!upload) return;
+        if (upload.cancelled) {
+            // FIX: chunk residuo arrivato dopo il cancel - ignora
+            log('Upload cancelled, ignoring residual chunk');
+            return;
+        }
+        // Call append_incoming_chunk to write incrementally to disk
+        try {
+            log('append_incoming_chunk with peerId: ' + maskPeerId(conn.peer) + ', chunk size: ' + chunk.length);
+            console.log('Full peerId (debug):', conn.peer);
+            await invoke('append_incoming_chunk', {
+                peerId: conn.peer,
+                chunk: chunk
+            });
+            upload.receivedBytes += chunk.length;
+            const progress = Math.round((upload.receivedBytes / upload.size) * 100);
+            log('Received upload chunk: ' + progress + '%');
 
-                        // Real transfer speed: bytes received / elapsed time since start
-                        const elapsedMs = Date.now() - upload.startTime;
-                        const speedMbps = elapsedMs > 0 ? (upload.receivedBytes / (1024 * 1024)) / (elapsedMs / 1000) : 0;
-                        // Update download progress bar (Reverse Inbox: app is receiving from browser)
-                        // FIX P0: consistency with line 1376 (msg.hash prioritized) to avoid orphaned entries.
-                        const downloadId = upload.expectedHash || `${conn.peer}-${upload.filename}`;
-                        activeDownloads.set(downloadId, {
-                            hash: upload.expectedHash || downloadId,
-                            filename: upload.filename,
-                            total_bytes: upload.size,
-                            downloaded_bytes: upload.receivedBytes,
-                            progress: progress,
-                            speed_mbps: speedMbps,
-                            peer_ip: conn.peer,
-                                                        cancelled: false
-                                                    });
-                                                    updateDownloadProgress(Array.from(activeDownloads.values()));
-                                                } catch (err) {
-                                                    const errorMsg = getErrorMessage(err);
-                                                    log('❌ Error appending chunk: ' + errorMsg);
-                                                    // Notify browser so it doesn't hang sending chunks forever
-                                                    try {
-                                                        conn.send(JSON.stringify({ type: 'upload_error', message: errorMsg }));
-                                                    } catch (e) {
-                                                        log('❌ Could not send upload_error to browser: ' + getErrorMessage(e));
-                                                    }
-                                                    // Remove from active downloads on error
-                                                    // FIX P0: consistency with line 1376 (msg.hash prioritized) to avoid orphaned entries.
-                                                    const downloadId = upload.expectedHash || `${conn.peer}-${upload.filename}`;
-                                                    activeDownloads.delete(downloadId);
-                                                    updateDownloadProgress(Array.from(activeDownloads.values()));
-                                                }
-                                            }
-                                        }
-                                        
-                                        // Handle incoming file offers (P2P-to-P2P)
-                                        if (data?.type === 'file-offer') {
-                                            // Initialize incoming file state
-                                            incomingFiles.set(data.hash, {
-                                                filename: data.filename,
-                                                size: data.size,
-                                                hash: data.hash,
-                                                chunks: new Map(),
-                                                receivedBytes: 0,
-                                                startTime: Date.now()
-                                            });
-                                            // Add to active downloads for progress display
-                                            // FIX #1: always use data.hash as the key (it is the msg.expectedHash
-                                            // from the sender, which matches the backend cancellation key)
-                                            activeDownloads.set(data.hash, {
-                                                hash: data.hash,
-                                                filename: data.filename,
-                                                total_bytes: data.size,
-                                                downloaded_bytes: 0,
-                                                progress: 0,
-                                                speed_mbps: 0,
-                                                peer_ip: conn.peer,
-                                                cancelled: false
-                                            });
-                                            updateDownloadProgress(Array.from(activeDownloads.values()));
-                                            // Detect whether this connection goes through the TURN relay (LED badge).
-                                            // FIX: poll ICE stats with retries instead of a single call.
-                                            // A single getStats() right after the connection opens often
-                                            // returns no selected candidate pair yet, so the badge stays
-                                            // hidden for the whole transfer. Poll up to 10 times (1s apart).
-                                            let p2pPollAttempts = 0;
-                                            const p2pPollTurnPath = () => {
-                                                if (p2pPollAttempts >= 10) return;
-                                                p2pPollAttempts++;
-                                                detectConnectionPath(conn).then((path) => {
-                                                    if (!path) {
-                                                        setTimeout(p2pPollTurnPath, 1000);
-                                                        return;
-                                                    }
-                                                    connectionPaths.set(data.hash, path);
-                                                    updateDownloadProgress(Array.from(activeDownloads.values()));
-                                                }).catch(() => {
-                                                    if (p2pPollAttempts < 10) setTimeout(p2pPollTurnPath, 1000);
-                                                });
-                                            };
-                                            setTimeout(p2pPollTurnPath, 500);
-                                            log(`📥 File offer received: ${data.filename} (${data.size} bytes)`);
-                                            return;
-                                        }
-                                        if (data?.type === 'file-chunk') {
-                                            const incoming = incomingFiles.get(data.hash);
-                                            if (incoming) {
-                                                incoming.chunks.set(data.offset, data.chunk);
-                                                incoming.receivedBytes += data.chunk.length;
-                                                const progress = Math.round((incoming.receivedBytes / incoming.size) * 100);
-                                                log(`📥 Received chunk: ${progress}%`);
+            // ULTRA-ROBUST auto-finalize: when ALL bytes declared in
+            // upload_file have been received and written to disk, finalize
+            // IMMEDIATELY. This does NOT depend on the out-of-order
+            // `upload_end` text message from PeerJS, which can arrive
+            // before the last binary chunks are processed.
+            // This eliminates the root cause of hash mismatch.
+            if (!upload.finalized && upload.receivedBytes >= upload.size) {
+                upload.finalized = true;
+                log('All bytes received (' + upload.receivedBytes + '/' + upload.size + '), auto-finalizing...');
+                // FIX HIGH: do NOT delete incomingUploads BEFORE finalizeIncomingUpload.
+                // If finalize fails (e.g. hash mismatch), the entry must remain
+                // to allow a retry from the browser. finalizeIncomingUpload
+                // already sends `upload_complete` to the browser on success.
+                await finalizeIncomingUpload(conn, upload);
+                incomingUploads.delete(conn.peer);
+                return;
+            }
 
-                                                // Update download progress bar
-                                                const elapsedMs = Date.now() - incoming.startTime;
-                                                const speedMbps = elapsedMs > 0 ? (incoming.receivedBytes / (1024 * 1024)) / (elapsedMs / 1000) : 0;
-                                                activeDownloads.set(data.hash, {
-                                                    hash: data.hash,
-                                                    filename: incoming.filename,
-                                                    total_bytes: incoming.size,
-                                                    downloaded_bytes: incoming.receivedBytes,
-                                                    progress: progress,
-                                                    speed_mbps: speedMbps,
-                                                    peer_ip: conn.peer,
-                                                    cancelled: false
-                                                });
-                                                updateDownloadProgress(Array.from(activeDownloads.values()));
+            // Real transfer speed: bytes received / elapsed time since start
+            const elapsedMs = Date.now() - upload.startTime;
+            const speedMbps = elapsedMs > 0 ? (upload.receivedBytes / (1024 * 1024)) / (elapsedMs / 1000) : 0;
+            // Update download progress bar (Reverse Inbox: app is receiving from browser)
+            // FIX P0: consistency with line 1376 (msg.hash prioritized) to avoid orphaned entries.
+            const downloadId = upload.expectedHash || (conn.peer + '-' + upload.filename);
+            activeDownloads.set(downloadId, {
+                hash: upload.expectedHash || downloadId,
+                filename: upload.filename,
+                total_bytes: upload.size,
+                downloaded_bytes: upload.receivedBytes,
+                progress: progress,
+                speed_mbps: speedMbps,
+                peer_ip: conn.peer,
+                cancelled: false
+            });
+            updateDownloadProgress(Array.from(activeDownloads.values()));
+        } catch (err) {
+            const errorMsg = getErrorMessage(err);
+            log('Error appending chunk: ' + errorMsg);
+            // Notify browser so it doesn't hang sending chunks forever
+            try {
+                conn.send(JSON.stringify({ type: 'upload_error', message: errorMsg }));
+            } catch (e) {
+                log('Could not send upload_error to browser: ' + getErrorMessage(e));
+            }
+            // Remove from active downloads on error
+            // FIX P0: consistency with line 1376 (msg.hash prioritized) to avoid orphaned entries.
+            const downloadId = upload.expectedHash || (conn.peer + '-' + upload.filename);
+            activeDownloads.delete(downloadId);
+            updateDownloadProgress(Array.from(activeDownloads.values()));
+        }
+    }
 
-                                                // Check if all chunks received
-                                                if (incoming.chunks.size > 0 && incoming.receivedBytes >= incoming.size) {
-                                                    log('✅ All chunks received, assembling file...');
-                                                    // Assemble file from chunks
-                                                    const assembled = new Uint8Array(incoming.size);
-                                                    let pos = 0;
-                                                    for (const [offset, chunk] of incoming.chunks) {
-                                                        assembled.set(chunk, offset);
-                                                        pos += chunk.length;
-                                                    }
-                                                    // Create blob and download
-                                                    const blob = new Blob([assembled]);
-                                                    const url = URL.createObjectURL(blob);
-                                                    const a = document.createElement('a');
-                                                    a.href = url;
-                                                    a.download = incoming.filename;
-                                                    document.body.appendChild(a);
-                                                    a.click();
-                                                    document.body.removeChild(a);
-                                                    setTimeout(() => URL.revokeObjectURL(url), 5000);
-                                                    log('✅ File downloaded via P2P');
-                                                    incomingFiles.delete(data.hash);
-                                                    activeDownloads.delete(data.hash);
-                                                    updateDownloadProgress(Array.from(activeDownloads.values()));
-                                                }
-                                            }
-                                            return;
-                                        }
-                                    }
+    // Handle incoming file offers (P2P-to-P2P)
+    if (data?.type === 'file-offer') {
+        // Initialize incoming file state
+        incomingFiles.set(data.hash, {
+            filename: data.filename,
+            size: data.size,
+            hash: data.hash,
+            chunks: new Map(),
+            receivedBytes: 0,
+            startTime: Date.now()
+        });
+        // Add to active downloads for progress display
+        // FIX #1: always use data.hash as the key (it is the msg.expectedHash
+        // from the sender, which matches the backend cancellation key)
+        activeDownloads.set(data.hash, {
+            hash: data.hash,
+            filename: data.filename,
+            total_bytes: data.size,
+            downloaded_bytes: 0,
+            progress: 0,
+            speed_mbps: 0,
+            peer_ip: conn.peer,
+            cancelled: false
+        });
+        updateDownloadProgress(Array.from(activeDownloads.values()));
+        // Detect whether this connection goes through the TURN relay (LED badge).
+        // FIX: poll ICE stats with retries instead of a single call.
+        // A single getStats() right after the connection opens often
+        // returns no selected candidate pair yet, so the badge stays
+        // hidden for the whole transfer. Poll up to 10 times (1s apart).
+        let p2pPollAttempts = 0;
+        const p2pPollTurnPath = () => {
+            if (p2pPollAttempts >= 10) return;
+            p2pPollAttempts++;
+            detectConnectionPath(conn).then((path) => {
+                if (!path) {
+                    setTimeout(p2pPollTurnPath, 1000);
+                    return;
+                }
+                connectionPaths.set(data.hash, path);
+                updateDownloadProgress(Array.from(activeDownloads.values()));
+            }).catch(() => {
+                if (p2pPollAttempts < 10) setTimeout(p2pPollTurnPath, 1000);
+            });
+        };
+        setTimeout(p2pPollTurnPath, 500);
+        log('File offer received: ' + data.filename + ' (' + data.size + ' bytes)');
+        return;
+    }
+    if (data?.type === 'file-chunk') {
+        const incoming = incomingFiles.get(data.hash);
+        if (incoming) {
+            incoming.chunks.set(data.offset, data.chunk);
+            incoming.receivedBytes += data.chunk.length;
+            const progress = Math.round((incoming.receivedBytes / incoming.size) * 100);
+            log('Received chunk: ' + progress + '%');
+
+            // Update download progress bar
+            const elapsedMs = Date.now() - incoming.startTime;
+            const speedMbps = elapsedMs > 0 ? (incoming.receivedBytes / (1024 * 1024)) / (elapsedMs / 1000) : 0;
+            activeDownloads.set(data.hash, {
+                hash: data.hash,
+                filename: incoming.filename,
+                total_bytes: incoming.size,
+                downloaded_bytes: incoming.receivedBytes,
+                progress: progress,
+                speed_mbps: speedMbps,
+                peer_ip: conn.peer,
+                cancelled: false
+            });
+            updateDownloadProgress(Array.from(activeDownloads.values()));
+
+            // Check if all chunks received
+            if (incoming.chunks.size > 0 && incoming.receivedBytes >= incoming.size) {
+                log('All chunks received, assembling file...');
+                // Assemble file from chunks
+                const assembled = new Uint8Array(incoming.size);
+                let pos = 0;
+                for (const [offset, chunk] of incoming.chunks) {
+                    assembled.set(chunk, offset);
+                    pos += chunk.length;
+                }
+                // Create blob and download
+                const blob = new Blob([assembled]);
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = incoming.filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 5000);
+                log('File downloaded via P2P');
+                incomingFiles.delete(data.hash);
+                activeDownloads.delete(data.hash);
+                updateDownloadProgress(Array.from(activeDownloads.values()));
+            }
+        }
+        return;
+    }
+}
+
 function downloadReceivedFile(filename: string, data: Uint8Array): void {
     const blob = new Blob([data.buffer as ArrayBuffer]);
     const url = URL.createObjectURL(blob);
@@ -2395,6 +2403,47 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (existing) {
                     existing.cancelled = true;
                     activeUploads.set(key, existing);
+
+                    // FIX: notify the browser (sender) to stop sending chunks.
+                    // The browser's sendFileChunks loop has no cancellation
+                    // mechanism, so we must send a WebRTC message to tell it
+                    // to abort. Without this, the browser keeps sending until
+                    // the connection closes or the file is fully uploaded.
+                    const browserPeer = existing.peer_id;
+                    if (browserPeer && browserPeer !== 'inbox') {
+                        let conn = connections.get(browserPeer);
+                        if (!conn && peer && peer.open) {
+                            const conns: any[] = (peer as any).connections?.[browserPeer] || [];
+                            conn = conns.find((c: any) => c && c.open) || conns[0];
+                        }
+                        if (conn && (conn as any).open) {
+                            try {
+                                (conn as DataConnection).send(JSON.stringify({
+                                    type: 'transfer_cancelled',
+                                    hash: key
+                                }));
+                                log('Sent transfer_cancelled to browser: ' + browserPeer);
+                            } catch (e) { /* best-effort */ }
+                        }
+                    }
+
+                    // FIX: mark incomingUploads as cancelled so residual chunks
+                    // in flight are ignored by the binary chunk handler.
+                    const peerKey2a: string = browserPeer || '';
+                    const incUpload = incomingUploads.get(peerKey2a);
+                    if (incUpload) {
+                        incUpload.cancelled = true;
+                    }
+
+                    // FIX: schedule cleanup of incomingUploads entry after a delay,
+                    // giving time for residual chunks in flight to arrive and be
+                    // ignored by the cancelled flag check in the chunk handler.
+                    const peerKey2c: string = browserPeer || '';
+                    if (peerKey2c) {
+                        setTimeout(() => {
+                            incomingUploads.delete(peerKey2c);
+                        }, 1000);
+                    }
                 }
             }
             
@@ -2422,7 +2471,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     updateDownloadProgress(Array.from(activeDownloads.values()));
                 }
                 // Visual feedback in the header
-                showHeaderStatus('⏹ Download cancelled', 'info');
+                showHeaderStatus('Download cancelled', 'info');
             } else {
                 const row = uploadProgressListRight?.querySelector(
                     `[data-upload-id="${CSS.escape(key)}"]`
@@ -2442,7 +2491,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                     activeUploads.delete(key);
                     renderUploadProgressList();
                 }
-                showHeaderStatus('⏹ Upload cancelled', 'info');
+                showHeaderStatus('Upload cancelled', 'info');
             }
         } catch (error) {
             console.error('Cancel error:', error);
@@ -2450,4 +2499,4 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 });
 
-
+ 
