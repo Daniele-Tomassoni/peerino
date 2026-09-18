@@ -1122,7 +1122,7 @@
                 let connectTimeout = null;
 
                 peer.on('open', () => {
-                    connection = peer.connect(senderId);
+                    connection = peer.connect(senderId, { reliable: true });
                     if (!connection) {
                         setStatus('❌ Could not connect to sender.', 'error');
                         log('❌ peer.connect() returned null');
@@ -1414,7 +1414,7 @@
                const uploadPeer = new Peer(peerOptions);
 
                uploadPeer.on('open', () => {
-                   const conn = uploadPeer.connect(senderId);
+                   const conn = uploadPeer.connect(senderId, { reliable: true });
                    if (!conn) {
                        setStatus('❌ Could not connect to sender.', 'error');
                        log('❌ peer.connect() returned null');

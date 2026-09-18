@@ -1214,68 +1214,78 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
     // (maximum caution) to prevent files >100MB from passing over TURN
     // when detection fails. An undetected path is suspicious and may
     // hide a relay.
-    let detectedPath: 'direct' | 'turn' | null = null;
-    // Check sincrono: se la connessione è già stabile, il primo tentativo
-    // dovrebbe riuscire immediatamente. Riduciamo il loop a 5s totali
-    // con polling ogni 250ms (20 tentativi) invece di 10s (10 tentativi).
-    const deadline = Date.now() + 5000;
-    while (Date.now() < deadline) {
-        detectedPath = await detectConnectionPath(conn).catch(() => null);
-        if (detectedPath) break;
-        await new Promise<void>(r => setTimeout(r, 250));
-    }
-    if (detectedPath === null) {
-        log('⚠️ detectConnectionPath: timeout (5s). Assuming TURN for safety.');
-        detectedPath = 'turn';
-    }
+    // Path detection con gate condizionale:
+    // - File > turnMaxSize: serve il gate (potenziale rifiuto TURN)
+    // - File <= turnMaxSize: salta il gate, invia metadata subito.
+    //   Il badge LED verrà aggiornato dal pollTurnPath esistente
+    //   (righe ~1319-1335), che gira in background dopo l'invio del metadata.
+    if (fileInfo.size > turnMaxSize) {
+        let detectedPath: 'direct' | 'turn' | null = null;
+        // Check sincrono: se la connessione è già stabile, il primo tentativo
+        // dovrebbe riuscire immediatamente. Riduciamo il loop a 5s totali
+        // con polling ogni 250ms (20 tentativi) invece di 10s (10 tentativi).
+        const deadline = Date.now() + 5000;
+        while (Date.now() < deadline) {
+            detectedPath = await detectConnectionPath(conn).catch(() => null);
+            if (detectedPath) break;
+            await new Promise<void>(r => setTimeout(r, 250));
+        }
+        if (detectedPath === null) {
+            log('⚠️ detectConnectionPath: timeout (5s). Assuming TURN for safety.');
+            detectedPath = 'turn';
+        }
 
-    if (detectedPath === 'turn' && fileInfo.size > turnMaxSize) {
-        const errMsg = 'Your connection requires a relay server. To share this file, connect to WiFi.';
-        log('TURN size limit exceeded: ' + errMsg);
-        // Telemetry: record the rejection on the backend side.
-        invoke('record_turn_rejection_cmd').catch(() => { /* best-effort */ });
-        // FIX: also set the path to 'turn' for the LED badge
-        connectionPaths.set(uploadKey, 'turn');
-        activeUploads.set(uploadKey, {
-            hash: fileInfo.hash,
-            filename: fileInfo.filename,
-            bytes_processed: 0,
-            total_bytes: fileInfo.size,
-            progress: 0,
-            speed_mbps: 0,
-            peer_id: conn.peer,
-            cancelled: false
-        });
-        renderUploadProgressList();
-        // Update the badge to red (overlimit)
-        const badge = uploadProgressListRight?.querySelector<HTMLElement>('[data-upload-id="' + CSS.escape(uploadKey) + '"] .conn-badge');
-        if (badge) {
-            badge.className = 'conn-badge turn-overlimit';
-            badge.setAttribute('data-tooltip',
-                'Your connection requires a relay server. To share this file, connect to WiFi.');
+        // Gate TURN (invariato): rifiuta solo se il file supera il limite.
+        if (detectedPath === 'turn') {
+            const errMsg = 'Your connection requires a relay server. To share this file, connect to WiFi.';
+            log('TURN size limit exceeded: ' + errMsg);
+            // Telemetry: record the rejection on the backend side.
+            invoke('record_turn_rejection_cmd').catch(() => { /* best-effort */ });
+            // FIX: also set the path to 'turn' for the LED badge
+            connectionPaths.set(uploadKey, 'turn');
+            activeUploads.set(uploadKey, {
+                hash: fileInfo.hash,
+                filename: fileInfo.filename,
+                bytes_processed: 0,
+                total_bytes: fileInfo.size,
+                progress: 0,
+                speed_mbps: 0,
+                peer_id: conn.peer,
+                cancelled: false
+            });
+            renderUploadProgressList();
+            // Update the badge to red (overlimit)
+            const badge = uploadProgressListRight?.querySelector<HTMLElement>('[data-upload-id="' + CSS.escape(uploadKey) + '"] .conn-badge');
+            if (badge) {
+                badge.className = 'conn-badge turn-overlimit';
+                badge.setAttribute('data-tooltip',
+                    'Your connection requires a relay server. To share this file, connect to WiFi.');
+            }
+            try {
+                conn.send(JSON.stringify({
+                    type: 'error',
+                    reason: 'turn_size_limit',
+                    message: errMsg,
+                    max_size: turnMaxSize,
+                    file_size: fileInfo.size,
+                }));
+            } catch (e) {
+                log('❌ Could not send turn_size_limit error: ' + getErrorMessage(e));
+            }
+            return;
         }
-        try {
-            conn.send(JSON.stringify({
-                type: 'error',
-                reason: 'turn_size_limit',
-                message: errMsg,
-                max_size: turnMaxSize,
-                file_size: fileInfo.size,
-            }));
-        } catch (e) {
-            log('❌ Could not send turn_size_limit error: ' + getErrorMessage(e));
+        // Path detected as 'direct': set the green badge
+        if (detectedPath === 'direct') {
+            connectionPaths.set(uploadKey, 'direct');
+            renderUploadProgressList();
         }
-        return;
-    }
-    // Path detected as 'direct': set the green badge
-    if (detectedPath === 'direct') {
-        connectionPaths.set(uploadKey, 'direct');
-        renderUploadProgressList();
-    }
-    // detectedPath === 'turn' but file <= limit: set yellow badge
-    if (detectedPath === 'turn' && fileInfo.size <= turnMaxSize) {
-        connectionPaths.set(uploadKey, 'turn');
-        renderUploadProgressList();
+        // detectedPath === 'turn' but file <= limit: set yellow badge
+        if (detectedPath === 'turn' && fileInfo.size <= turnMaxSize) {
+            connectionPaths.set(uploadKey, 'turn');
+            renderUploadProgressList();
+        }
+    } else {
+        log(`ℹ️ File ${fileInfo.size} <= TURN limit ${turnMaxSize}: skipping path-detection gate, sending metadata immediately`);
     }
 
     try {
@@ -1960,7 +1970,7 @@ async function connectToPeer(): Promise<void> {
     connectPeerBtn.textContent = '⏳ Connecting...';
     updateConnectionStatus('pending', 'Waiting...');
     try {
-        const conn = peer.connect(remotePeerId);
+        const conn = peer.connect(remotePeerId, { reliable: true });
         conn.on('open', () => {
             connections.set(remotePeerId, conn);
             updateConnectionStatus('connected', 'Connected to ' + remotePeerId);
