@@ -1279,11 +1279,6 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
             connectionPaths.set(uploadKey, 'direct');
             renderUploadProgressList();
         }
-        // detectedPath === 'turn' but file <= limit: set yellow badge
-        if (detectedPath === 'turn' && fileInfo.size <= turnMaxSize) {
-            connectionPaths.set(uploadKey, 'turn');
-            renderUploadProgressList();
-        }
     } else {
         log(`ℹ️ File ${fileInfo.size} <= TURN limit ${turnMaxSize}: skipping path-detection gate, sending metadata immediately`);
     }
