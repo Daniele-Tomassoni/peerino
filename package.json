@@ -9,6 +9,7 @@
     "dev": "vite",
     "build": "vite build",
     "tauri": "tauri",
+    "typecheck": "tsc --noEmit",
     "test": "vitest --config vitest.config.ts",
     "test:ui": "vitest --ui --config vitest.config.ts"
   },

@@ -1,5 +1,7 @@
 # Peerino
 
+[![CI](https://github.com/Daniele-Tomassoni/peerino/actions/workflows/ci.yml/badge.svg)](https://github.com/Daniele-Tomassoni/peerino/actions/workflows/ci.yml)
+
 **P2P file sharing without cloud and without accounts. Direct when possible, relay when needed.**
 
 Peerino is an open-source desktop application for peer-to-peer file sharing. Send a file to anyone via a simple link — the recipient doesn't need to install anything. Or receive files from anyone, directly on your computer.
