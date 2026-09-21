@@ -208,6 +208,89 @@
             margin: 0 auto;
             opacity: 0.7;
         }
+        .how-it-works {
+            margin-bottom: 64px;
+            text-align: center;
+        }
+        .how-it-works h2 {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--text);
+            margin-bottom: 12px;
+        }
+        .section-intro {
+            color: var(--text-dim);
+            font-size: 1rem;
+            margin-bottom: 40px;
+            max-width: 560px;
+            margin-left: auto;
+            margin-right: auto;
+            line-height: 1.5;
+        }
+        .how-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 24px;
+            text-align: left;
+        }
+        .how-card {
+            background: var(--panel);
+            border: 1px solid var(--panel-border);
+            border-radius: var(--radius-md);
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .how-card h3 {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--text);
+            margin: 0;
+        }
+        .how-card img {
+            width: 100%;
+            height: auto;
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--panel-border);
+            display: block;
+        }
+        .how-steps {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            counter-reset: step;
+        }
+        .how-steps li {
+            counter-increment: step;
+            position: relative;
+            padding-left: 36px;
+            margin-bottom: 8px;
+            color: var(--text-dim);
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+        .how-steps li::before {
+            content: counter(step);
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: rgba(56, 189, 248, 0.15);
+            border: 1px solid rgba(56, 189, 248, 0.3);
+            color: var(--accent);
+            font-size: 0.75rem;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .how-steps strong {
+            color: var(--text);
+            font-weight: 600;
+        }
         @media (max-width: 480px) {
             .download-btn-primary {
                 padding: 16px 18px;
@@ -215,6 +298,12 @@
             }
             .download-icon {
                 font-size: 1.5rem;
+            }
+            .how-it-works h2 {
+                font-size: 1.5rem;
+            }
+            .how-card {
+                padding: 16px;
             }
         }
     </style>
@@ -246,6 +335,39 @@
                 <p>On the same network, transfers stay local. No internet, no relay, maximum speed.</p>
             </div>
         </div>
+
+        <section class="how-it-works">
+            <h2>How it works</h2>
+            <p class="section-intro">
+                Two simple flows: send a file to anyone, or receive files from anyone.
+            </p>
+
+            <div class="how-grid">
+                <div class="how-card">
+                    <h3>📤 Send a file</h3>
+                    <img src="assets/how-to-send.jpg"
+                         alt="Peerino app: 1. select the file, 2. click Generate Link, 3. copy and send the link"
+                         loading="lazy">
+                    <ol class="how-steps">
+                        <li>Select the file in the <strong>Shared Files</strong> window</li>
+                        <li>Click <strong>Generate Link</strong></li>
+                        <li>Copy the link and send it to anyone</li>
+                    </ol>
+                </div>
+
+                <div class="how-card">
+                    <h3>📥 Receive a file</h3>
+                    <img src="assets/how-to-receive.jpg"
+                         alt="Peerino app: 1. click Create Inbox, 2. copy the generated link and send it"
+                         loading="lazy">
+                    <ol class="how-steps">
+                        <li>Click <strong>Create Inbox</strong></li>
+                        <li>Copy the generated link and send it to anyone</li>
+                        <li>They upload files from their browser, no app required</li>
+                    </ol>
+                </div>
+            </div>
+        </section>
 
         <div class="download-section">
             <a href="https://github.com/Daniele-Tomassoni/peerino/releases/latest/download/peerino-installer.exe" class="download-btn-primary">
