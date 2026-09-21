@@ -2403,6 +2403,23 @@ document.addEventListener('DOMContentLoaded', async () => {
                             } catch (e) { /* best-effort */ }
                         }
                     }
+
+                    // FIX: se questo download è in realtà un upload inbox in arrivo,
+                    // marca incomingUploads come cancellato per ignorare i chunk residui.
+                    // Senza questo, la barra sparisce ma i chunk successivi la ricreano.
+                    // incomingUploads è keyed per conn.peer (linea 1709), e
+                    // existing.peer_ip (da activeDownloads, linea 1623) = conn.peer,
+                    // quindi le due chiavi coincidono.
+                    if (senderPeer) {
+                        const incUpload = incomingUploads.get(senderPeer);
+                        if (incUpload) {
+                            incUpload.cancelled = true;
+                            log('Marked incoming upload as cancelled: ' + senderPeer);
+                            setTimeout(() => {
+                                incomingUploads.delete(senderPeer);
+                            }, 1000);
+                        }
+                    }
                 }
             } else {
                 // Look up the upload to get the actual hash for the backend
