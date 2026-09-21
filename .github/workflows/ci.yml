@@ -3,17 +3,6 @@ name: CI
 on:
   push:
     branches: [main]
-    paths:
-      - 'src/**'
-      - 'src-tauri/**'
-      - 'tests/**'
-      - 'peerino-website/**'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'vitest.config.ts'
-      - 'vite.config.ts'
-      - 'tsconfig.json'
-      - '.github/workflows/ci.yml'
   pull_request:
     branches: [main]
   workflow_dispatch:
