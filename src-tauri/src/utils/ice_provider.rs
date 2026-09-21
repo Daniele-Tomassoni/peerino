@@ -50,6 +50,7 @@ enum IceProviderPreference {
     #[default]
     Auto,
     Metered,
+    Cloudflare,
     Coturn,
     Static,
 }
@@ -62,9 +63,10 @@ impl IceProviderPreference {
             .to_lowercase()
             .as_str()
         {
-            "metered" => IceProviderPreference::Metered,
-            "coturn"  => IceProviderPreference::Coturn,
-            "static"  => IceProviderPreference::Static,
+            "metered"    => IceProviderPreference::Metered,
+            "cloudflare" => IceProviderPreference::Cloudflare,
+            "coturn"     => IceProviderPreference::Coturn,
+            "static"     => IceProviderPreference::Static,
             other => {
                 if !other.is_empty() {
                     log::warn!("⚠️ ICE_PROVIDER={} non valido, uso auto", other);
@@ -80,6 +82,8 @@ impl IceProviderPreference {
 pub enum IceProviderKind {
     /// Dynamic fetch from metered.ca REST API.
     Metered,
+    /// Dynamic fetch from Cloudflare Worker TURN proxy.
+    Cloudflare,
     /// Coturn REST schema with ephemeral HMAC-SHA1 credentials.
     CoturnRest,
     /// STUN only, no TURN (safe fallback).
@@ -189,6 +193,54 @@ pub async fn fetch_ice_servers(ttl_secs: Option<u64>) -> IceResolution {
             }
         }
 
+        IceProviderPreference::Cloudflare => {
+            if let Ok(endpoint) = std::env::var("TURN_CREDENTIALS_ENDPOINT") {
+                if !endpoint.trim().is_empty() {
+                    match fetch_cloudflare_turn(&endpoint).await {
+                        Ok(entries) => {
+                            log::info!(
+                                "✅ ICE servers fetched from Cloudflare Worker ({} entries)",
+                                entries.len()
+                            );
+                            return IceResolution {
+                                provider: IceProviderKind::Cloudflare,
+                                config: IceLinkConfig {
+                                    signaling_url: std::env::var("SIGNALING_URL")
+                                        .ok()
+                                        .filter(|s| !s.is_empty()),
+                                    stun_urls: vec![],
+                                    turn: None,
+                                },
+                                warning: None,
+                                metered_entries: Some(entries),
+                            };
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "⚠️ Cloudflare Worker fetch failed: {}. Fallback a StaticOnly.",
+                                e
+                            );
+                            return IceResolution {
+                                provider: IceProviderKind::StaticOnly,
+                                config: ice_link_config_from_env(),
+                                warning: Some(format!("cloudflare_unavailable: {}", e)),
+                                metered_entries: None,
+                            };
+                        }
+                    }
+                }
+            }
+            log::warn!(
+                "⚠️ ICE_PROVIDER=cloudflare ma TURN_CREDENTIALS_ENDPOINT non impostato. Fallback a StaticOnly."
+            );
+            IceResolution {
+                provider: IceProviderKind::StaticOnly,
+                config: ice_link_config_from_env(),
+                warning: Some("cloudflare_required_but_missing".to_string()),
+                metered_entries: None,
+            }
+        }
+
         IceProviderPreference::Coturn => {
             let cfg = if let Some(ttl) = ttl_secs {
                 ice_link_config_from_env_with_ttl(ttl)
@@ -264,7 +316,55 @@ pub async fn fetch_ice_servers(ttl_secs: Option<u64>) -> IceResolution {
                 }
             }
 
-            // Provider 2: coturn REST (if TURN_AUTH_SECRET + TURN_URLS are present)
+            // Provider 2: Cloudflare Worker TURN proxy (if TURN_CREDENTIALS_ENDPOINT is present)
+            if let Ok(endpoint) = std::env::var("TURN_CREDENTIALS_ENDPOINT") {
+                if !endpoint.trim().is_empty() {
+                    match fetch_cloudflare_turn(&endpoint).await {
+                        Ok(entries) => {
+                            log::info!(
+                                "✅ ICE servers fetched from Cloudflare Worker ({} entries)",
+                                entries.len()
+                            );
+                            return IceResolution {
+                                provider: IceProviderKind::Cloudflare,
+                                config: IceLinkConfig {
+                                    signaling_url: std::env::var("SIGNALING_URL")
+                                        .ok()
+                                        .filter(|s| !s.is_empty()),
+                                    stun_urls: vec![],
+                                    turn: None,
+                                },
+                                warning: None,
+                                metered_entries: Some(entries),
+                            };
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "⚠️ Cloudflare Worker fetch failed: {}. Falling back to coturn/static STUN.",
+                                e
+                            );
+                            let cfg = if let Some(ttl) = ttl_secs {
+                                ice_link_config_from_env_with_ttl(ttl)
+                            } else {
+                                ice_link_config_from_env()
+                            };
+                            let provider = if cfg.turn.is_some() {
+                                IceProviderKind::CoturnRest
+                            } else {
+                                IceProviderKind::StaticOnly
+                            };
+                            return IceResolution {
+                                provider,
+                                config: cfg,
+                                warning: Some(format!("cloudflare_unavailable: {}", e)),
+                                metered_entries: None,
+                            };
+                        }
+                    }
+                }
+            }
+
+            // Provider 3: coturn REST (if TURN_AUTH_SECRET + TURN_URLS are present)
             let cfg = if let Some(ttl) = ttl_secs {
                 ice_link_config_from_env_with_ttl(ttl)
             } else {
@@ -407,6 +507,70 @@ async fn fetch_metered(api_key: &str) -> Result<Vec<IceServerEntry>, String> {
 
     log::info!("[Metered] Parsed {} ice servers successfully", entries.len());
     Ok(entries)
+}
+
+/// Fetch TURN credentials from a Cloudflare Worker proxy.
+///
+/// The Worker is expected to return a JSON object with an `iceServers` field
+/// containing an array of `IceServerEntry` (already in WebRTC standard format).
+/// Example response:
+///   {"iceServers":[{"urls":["turn:turn.cloudflare.com:3478"],"username":"...","credential":"..."}]}
+async fn fetch_cloudflare_turn(endpoint: &str) -> Result<Vec<IceServerEntry>, String> {
+    let url = endpoint.trim();
+    if !url.starts_with("http://") && !url.starts_with("https://") {
+        return Err(format!(
+            "TURN_CREDENTIALS_ENDPOINT malformato (manca http:// o https://): {:?}",
+            url
+        ));
+    }
+
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(FETCH_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| format!("reqwest build error: {}", e))?;
+
+    let resp = client
+        .get(url)
+        .header("Accept", "application/json")
+        .send()
+        .await
+        .map_err(|e| format!("HTTP request failed: {}", e))?;
+
+    if !resp.status().is_success() {
+        return Err(format!(
+            "Cloudflare Worker returned status {}",
+            resp.status()
+        ));
+    }
+
+    let body_text = resp
+        .text()
+        .await
+        .map_err(|e| format!("read body: {}", e))?;
+
+    #[derive(Deserialize)]
+    struct WorkerResponse {
+        #[serde(rename = "iceServers")]
+        ice_servers: Vec<IceServerEntry>,
+    }
+
+    let parsed: WorkerResponse = serde_json::from_str(&body_text).map_err(|e| {
+        let preview: String = body_text.chars().take(300).collect();
+        format!(
+            "Cloudflare Worker: failed to parse response: {}. Body (first 300 chars): {}",
+            e, preview
+        )
+    })?;
+
+    if parsed.ice_servers.is_empty() {
+        return Err("Cloudflare Worker returned empty iceServers array".to_string());
+    }
+
+    log::info!(
+        "[Cloudflare TURN] Parsed {} ice servers",
+        parsed.ice_servers.len()
+    );
+    Ok(parsed.ice_servers)
 }
 
 #[cfg(test)]

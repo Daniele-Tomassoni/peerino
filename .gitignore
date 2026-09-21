@@ -148,8 +148,15 @@ $RECYCLE.BIN/
 .netlify.toml.local
 .wrangler/
 .vercel/
+# Peerino TURN proxy (Cloudflare Worker) — secrets and runtime
+# ==============================================================
+
+peerino-turn-proxy/.dev.vars
+peerino-turn-proxy/node_modules/
+peerino-turn-proxy/.wrangler/
 
 # ==============================================================
+
 # RUST ANALYZER
 # ==============================================================
 .rust-analyzer/
