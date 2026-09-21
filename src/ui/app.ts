@@ -229,6 +229,16 @@ const activeDownloads = new Map<string, DownloadProgress>();
 // Track all active uploads for multi-upload display
 const activeUploads = new Map<string, UploadProgress>();
 
+// FIX: Map of streamId → cancelled flag for P2P download streaming.
+// The callback `channel.onmessage` checks this flag before calling
+// `conn.send()` to avoid "Connection is not open" errors after cancel.
+const streamCancellations = new Map<string, boolean>();
+
+// FIX: Map of file hash → streamId for cancel-handler lookup.
+// The cancel handler receives the download hash, not the streamId,
+// so we need a reverse mapping to find the active stream.
+const hashToStreamId = new Map<string, string>();
+
 // Recent transfers log (resets on app restart - in-memory only)
 interface TransferRecord {
     type: 'upload' | 'download';
@@ -1283,6 +1293,14 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
         log(`ℹ️ File ${fileInfo.size} <= TURN limit ${turnMaxSize}: skipping path-detection gate, sending metadata immediately`);
     }
 
+    // FIX: declare streamId OUTSIDE the try block so it is accessible in catch.
+    // Use uploadKey (peer-hash) as streamId so the cancel handler — which
+    // receives the same uploadKey — can set the cancellation flag on the
+    // exact same Map entry. Previously streamId was `stream-hash-timestamp`,
+    // which never matched the cancel handler's key, so the flag was never
+    // set and the channel callback kept sending chunks after cancel.
+    const streamId = uploadKey;
+
     try {
         // 1. Send file metadata as JSON string
         const meta = {
@@ -1345,14 +1363,31 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
         // polling `read_file_chunk` via IPC. This avoids base64 overhead
         // (256KB chunks become 340KB base64 strings) and gives us raw bytes
         // directly through the Channel.
-        const streamId = `stream-${fileInfo.hash}-${Date.now()}`;
+        // (streamId is declared outside the try block for catch-scope access)
         const K = 8; // ack every 8 chunks (512KB in flight)
         let bytesReceived = 0;
         let chunksInFlight = 0;
         let streamError: Error | null = null;
 
+        // FIX: register hash → streamId mapping so the cancel handler
+        // (which receives the download hash, not the streamId) can find
+        // the active stream and set its cancellation flag.
+        hashToStreamId.set(fileInfo.hash, streamId);
+
+        // FIX: local flag — set by cancel handler via streamCancellations Map.
+        // The callback checks this BEFORE conn.send() to avoid errors on a
+        // closed connection (which would otherwise spam "Connection is not open").
+        streamCancellations.set(streamId, false);
+        const isStreamCancelled = () => streamCancellations.get(streamId) === true;
+
         const channel = new Channel<unknown>();
         channel.onmessage = async (raw) => {
+            // FIX: check cancellation flag FIRST, before any I/O.
+            // The Channel may still deliver queued chunks after cancel.
+            if (isStreamCancelled() || streamError) {
+                return;
+            }
+
             // FIX B Test 1: Tauri Channel delivers raw bytes as a plain
             // array of numbers (not a Uint8Array). PeerJS does not recognize
             // this as binary data and tries to serialize it with binarypack.pack(),
@@ -1380,8 +1415,14 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
                 });
             }
 
-            // 2. Send chunk to peer
-            conn.send(chunk);
+            // 2. Send chunk to peer (wrapped in try/catch to handle closed conn)
+            try {
+                conn.send(chunk);
+            } catch (e) {
+                log('❌ conn.send failed: ' + getErrorMessage(e));
+                streamError = new Error('conn.send failed: ' + getErrorMessage(e));
+                return;
+            }
 
             // 3. Update progress
             bytesReceived += chunk.length;
@@ -1433,6 +1474,9 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
             activeUploads.delete(uploadKey);
             renderUploadProgressList();
             activeWebRtcDownloads.delete(fileInfo.hash);
+            // FIX: cleanup stream cancellation flag + hash→streamId map
+            streamCancellations.delete(streamId);
+            hashToStreamId.delete(fileInfo.hash);
             return;
         }
 
@@ -1441,6 +1485,9 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
             activeUploads.delete(uploadKey);
             renderUploadProgressList();
             activeWebRtcDownloads.delete(fileInfo.hash);
+            // FIX: cleanup stream cancellation flag + hash→streamId map
+            streamCancellations.delete(streamId);
+            hashToStreamId.delete(fileInfo.hash);
             return;
         }
 
@@ -1458,6 +1505,9 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
         
         // Clear the pending file hash
         invoke('clear_pending_file_hash').catch(console.error);
+        // FIX: cleanup stream cancellation flag + hash→streamId map on success
+        streamCancellations.delete(streamId);
+        hashToStreamId.delete(fileInfo.hash);
     } catch (error) {
         const errorMsg = getErrorMessage(error);
         log('❌ Error streaming file: ' + errorMsg);
@@ -1466,6 +1516,9 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
         renderUploadProgressList();
         // Remove from active WebRTC uploads on error
         activeWebRtcDownloads.delete(fileInfo.hash);
+        // FIX: cleanup stream cancellation flag + hash→streamId map on error
+        streamCancellations.delete(streamId);
+        hashToStreamId.delete(fileInfo.hash);
         // FIX #2: Notify receiver of the error
         try {
             conn.send(JSON.stringify({ type: 'error', message: errorMsg }));
@@ -1616,6 +1669,10 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                     if (value.hash === msg.hash) {
                         value.cancelled = true;
                         activeUploads.set(key, value);
+                        // FIX: also set the stream cancellation flag so the
+                        // channel.onmessage callback in streamFileToConnection
+                        // stops sending chunks. key === uploadKey === streamId.
+                        streamCancellations.set(key, true);
                         break;
                     }
                 }
@@ -2444,14 +2501,25 @@ document.addEventListener('DOMContentLoaded', async () => {
                     // incomingUploads è keyed per conn.peer (linea 1709), e
                     // existing.peer_ip (da activeDownloads, linea 1623) = conn.peer,
                     // quindi le due chiavi coincidono.
-                    if (senderPeer) {
+                    if (senderPeer && senderPeer !== 'inbox') {
                         const incUpload = incomingUploads.get(senderPeer);
                         if (incUpload) {
                             incUpload.cancelled = true;
                             log('Marked incoming upload as cancelled: ' + senderPeer);
-                            setTimeout(() => {
-                                incomingUploads.delete(senderPeer);
-                            }, 1000);
+                            // FIX: call discard_incoming_upload for immediate
+                            // cleanup of the partial temp file on disk.
+                            // The previous setTimeout(1000ms) only removed the
+                            // frontend entry; the temp file in temp/ could
+                            // linger and, in error paths, leak.
+                            try {
+                                await invoke('discard_incoming_upload', { peerId: senderPeer });
+                                log('Discarded partial temp file for: ' + senderPeer);
+                            } catch (e) {
+                                log('discard_incoming_upload failed: ' + getErrorMessage(e));
+                            }
+                            // discard_incoming_upload already removed the
+                            // Rust-side entry; remove the frontend entry too.
+                            incomingUploads.delete(senderPeer);
                         }
                     }
                 }
@@ -2461,6 +2529,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const uploadHash = existing ? existing.hash : key;
                 await invoke('cancel_upload', { hash: uploadHash });
                 console.log(`❌ Upload cancelled: ${key}`);
+                // FIX: set the stream cancellation flag so the channel.onmessage
+                // callback in streamFileToConnection stops sending chunks.
+                // key === uploadKey === streamId (see streamFileToConnection).
+                streamCancellations.set(key, true);
                 if (existing) {
                     existing.cancelled = true;
                     activeUploads.set(key, existing);

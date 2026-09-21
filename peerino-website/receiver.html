@@ -653,6 +653,7 @@
             let fileSize = 0;
             let receivedChunks = [];
             let receivedSize = 0;
+            let downloadCancelled = false;
             let isDownloadReady = false;
             let startTime = 0;
             let selectedFile = null;
@@ -950,6 +951,9 @@
 
             // ===== START DOWNLOAD FLOW (user confirm + LAN/WebRTC race) =====
             async function startDownloadFlow() {
+                // FIX: reset the cancellation flag at the start of every new
+                // download attempt (covers LAN→WebRTC fallback and retries).
+                downloadCancelled = false;
                 startBtn.disabled = true;
                 setHeaderBadge('Connecting...');
                 showDetecting();
@@ -1188,11 +1192,29 @@
                 if (typeof data === 'string') {
                     try {
                         const meta = JSON.parse(data);
+                        // FIX: sender cancelled the download (app clicked X).
+                        // Without this, the browser keeps buffering chunks already
+                        // in flight on the DataChannel and never stops.
+                        if (meta.type === 'transfer_cancelled') {
+                            log('⏹ Transfer cancelled by sender');
+                            downloadCancelled = true;
+                            setStatus('⏹ Transfer cancelled by sender', 'error');
+                            receivedChunks = [];
+                            receivedSize = 0;
+                            progressContainer.classList.remove('visible');
+                            downloadBtn.classList.remove('show');
+                            return;
+                        }
                         if (meta.type === 'file_meta') {
                             fileName = meta.filename || 'file.bin';
                             fileSize = meta.size || 0;
                             receivedChunks = [];
                             receivedSize = 0;
+                            // FIX: a new file_meta means the sender restarted the
+                            // transfer — clear any stale cancellation flag so
+                            // residual chunks from a previous cancelled attempt
+                            // don't keep being dropped.
+                            downloadCancelled = false;
                             startTime = Date.now();
                             log(`📄 Receiving "${fileName}" (${fileSize} bytes)`);
                             setStatus(`📥 Receiving "${fileName}"...`, 'loading');
@@ -1217,6 +1239,14 @@
                     } catch (e) {
                         log(`⚠️ Non-JSON string: ${data}`);
                     }
+                    return;
+                }
+
+                // FIX: ignore residual chunks after the sender cancelled.
+                // The DataChannel may still deliver queued chunks even after
+                // the sender stopped sending, so we must drop them here.
+                if (downloadCancelled) {
+                    log('⏭️ Ignoring residual chunk after cancel');
                     return;
                 }
 
