@@ -199,4 +199,4 @@ roadmap*.pdf
 .roo/
 .cursor/
 .aider*
-.continue/
+.continue/"peerino-turn-proxy/"  
