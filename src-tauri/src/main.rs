@@ -60,6 +60,8 @@ pub struct AppState {
     pub pending_file_hash: tokio::sync::Mutex<Option<String>>,
     // Incoming uploads state (browser → app)
     pub incoming_uploads: Arc<tokio::sync::Mutex<HashMap<String, commands::p2p::upload_state::UploadState>>>,
+    // FIX B: stream ack map — Arc<Notify> per stream_id for flow control (app → browser)
+    pub stream_acks: Arc<tokio::sync::Mutex<HashMap<String, Arc<tokio::sync::Notify>>>>,
     // FIX data integrity: global hash mismatch counter (atomic, no lock).
     // Incremented in finalize_incoming_file when the backend receives a file
     // whose hash does not match the one declared by the browser. A value > 0
@@ -160,6 +162,8 @@ fn main() {
                     unverified_uploads_total: std::sync::Arc::new(
                         std::sync::atomic::AtomicU64::new(0)
                     ),
+                    // FIX B: stream ack map — Notify per stream_id for flow control
+                    stream_acks: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             })
         .invoke_handler(tauri::generate_handler![
          commands::register_file::register_file,
@@ -186,6 +190,7 @@ fn main() {
          commands::p2p::peers::list_peers,
          commands::p2p::generate_link::generate_public_link,
          commands::p2p::stream_file::stream_file,
+         commands::p2p::stream_file::stream_ack,
          // P2P-to-Web link with PeerID (Internet)
          commands::p2p::generate_web_link::generate_web_link,
          commands::p2p::set_peer_id::set_peer_id,

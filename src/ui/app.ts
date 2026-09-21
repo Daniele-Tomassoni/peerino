@@ -13,7 +13,7 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, Channel } from '@tauri-apps/api/core';
 import { open } from '@tauri-apps/plugin-dialog';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { sendNotification } from '@tauri-apps/plugin-notification';
@@ -1341,61 +1341,58 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
         // renderUploadProgressList() is called on every chunk anyway, which
         // re-applies the badge via applyConnBadge.
 
-        while (offset < totalSize) {
-            // Check if upload was cancelled
-            const uploadEntry = activeUploads.get(uploadKey);
-            if (uploadEntry && uploadEntry.cancelled) {
-                log(`❌ Upload cancelled: ${fileInfo.filename}`);
-                activeUploads.delete(uploadKey);
-                renderUploadProgressList();
-                activeWebRtcDownloads.delete(fileInfo.hash);
+        // FIX B: use Tauri Channel for streaming (app → browser) instead of
+        // polling `read_file_chunk` via IPC. This avoids base64 overhead
+        // (256KB chunks become 340KB base64 strings) and gives us raw bytes
+        // directly through the Channel.
+        const streamId = `stream-${fileInfo.hash}-${Date.now()}`;
+        const K = 8; // ack every 8 chunks (512KB in flight)
+        let bytesReceived = 0;
+        let chunksInFlight = 0;
+        let streamError: Error | null = null;
+
+        const channel = new Channel<unknown>();
+        channel.onmessage = async (raw) => {
+            // FIX B Test 1: Tauri Channel delivers raw bytes as a plain
+            // array of numbers (not a Uint8Array). PeerJS does not recognize
+            // this as binary data and tries to serialize it with binarypack.pack(),
+            // which recurses on every element → stack overflow.
+            // Convert defensively before passing to conn.send().
+            let chunk: Uint8Array;
+            if (raw instanceof Uint8Array) {
+                chunk = raw;
+            } else if (Array.isArray(raw)) {
+                chunk = new Uint8Array(raw);
+            } else {
+                log('⚠️ Unexpected chunk type from Tauri Channel: ' +
+                    (typeof raw) + ' / ' + ((raw as any)?.constructor?.name || 'unknown'));
                 return;
             }
 
-            const chunk = await invoke<string | null>('read_file_chunk', {
-                hash: hash,
-                offset: offset
-            });
-
-            if (!chunk) break; // EOF
-
-            // Decode base64 to binary and send raw bytes
-            const binaryChunk = atob(chunk);
-            const bytes = new Uint8Array(binaryChunk.length);
-            for (let i = 0; i < binaryChunk.length; i++) {
-                bytes[i] = binaryChunk.charCodeAt(i);
-            }
-
-            // Backpressure: wait if buffer is too full
-            if (conn.dataChannel && conn.dataChannel.bufferedAmount > 1024 * 1024) { // 1MB threshold
+            // 1. Backpressure WebRTC DataChannel
+            if (conn.dataChannel && conn.dataChannel.bufferedAmount > 1024 * 1024) {
                 await new Promise<void>((resolve) => {
                     const onLow = () => {
-                        conn.dataChannel.removeEventListener('bufferedamountlow', onLow);
+                        conn.dataChannel!.removeEventListener('bufferedamountlow', onLow);
                         resolve();
                     };
-                    conn.dataChannel.addEventListener('bufferedamountlow', onLow);
+                    conn.dataChannel!.addEventListener('bufferedamountlow', onLow);
                 });
             }
 
-            conn.send(bytes);
+            // 2. Send chunk to peer
+            conn.send(chunk);
 
-            // Increment by actual bytes read (not chunkSize)
-            offset += bytes.length;
-
-            // Update upload progress bar in real-time
+            // 3. Update progress
+            bytesReceived += chunk.length;
             const elapsedMs = Date.now() - startTime;
-            const speedMbps = elapsedMs > 0 ? (offset / (1024 * 1024)) / (elapsedMs / 1000) : 0;
-            const progress = Math.min(100, (offset / totalSize) * 100);
-            // Update the active uploads map (this is an upload operation)
-            // Use the same unique key for this upload
-            // FIX: preserve the existing `cancelled` flag instead of hardcoding
-            // `false`. Without this, every loop iteration overwrites the flag
-            // set by the user's cancel click, so the upload never stops.
+            const speedMbps = elapsedMs > 0 ? (bytesReceived / (1024 * 1024)) / (elapsedMs / 1000) : 0;
+            const progress = Math.min(100, (bytesReceived / totalSize) * 100);
             const existingEntry = activeUploads.get(uploadKey);
             activeUploads.set(uploadKey, {
                 hash: fileInfo.hash,
                 filename: fileInfo.filename,
-                bytes_processed: offset,
+                bytes_processed: bytesReceived,
                 total_bytes: totalSize,
                 progress: progress,
                 speed_mbps: speedMbps,
@@ -1403,6 +1400,48 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
                 cancelled: existingEntry ? existingEntry.cancelled : false
             });
             renderUploadProgressList();
+
+            // 4. Ack Tauri every K chunks (flow control)
+            chunksInFlight++;
+            if (chunksInFlight >= K) {
+                try {
+                    await invoke('stream_ack', { streamId });
+                } catch (e) {
+                    log('⚠️ stream_ack failed: ' + getErrorMessage(e));
+                    streamError = new Error('stream_ack failed: ' + getErrorMessage(e));
+                }
+                chunksInFlight = 0;
+            }
+        };
+
+        // Start the stream from Rust
+        try {
+            await invoke('stream_file', {
+                hash: hash,
+                channel: channel,
+                streamId: streamId,
+            });
+        } catch (e) {
+            log('❌ stream_file failed: ' + getErrorMessage(e));
+            streamError = new Error('stream_file failed: ' + getErrorMessage(e));
+        }
+
+        // Check for cancellation (frontend cancel button)
+        const uploadEntry = activeUploads.get(uploadKey);
+        if (uploadEntry && uploadEntry.cancelled) {
+            log(`❌ Upload cancelled: ${fileInfo.filename}`);
+            activeUploads.delete(uploadKey);
+            renderUploadProgressList();
+            activeWebRtcDownloads.delete(fileInfo.hash);
+            return;
+        }
+
+        if (streamError) {
+            log('❌ Upload failed: ' + streamError.message);
+            activeUploads.delete(uploadKey);
+            renderUploadProgressList();
+            activeWebRtcDownloads.delete(fileInfo.hash);
+            return;
         }
 
         // Mark upload as complete - remove from active uploads
