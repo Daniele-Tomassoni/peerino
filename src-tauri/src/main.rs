@@ -206,6 +206,7 @@ fn main() {
          commands::p2p::init_incoming_upload::init_incoming_upload,
          commands::p2p::append_incoming_chunk::append_incoming_chunk,
          commands::p2p::finalize_incoming_file::finalize_incoming_file,
+         commands::p2p::discard_incoming_upload::discard_incoming_upload,
          // Telemetria integrità dati (P0: contatori hash mismatch / unverified)
          commands::hash_integrity::get_integrity_metrics,
          commands::turn_limits::get_turn_limits,

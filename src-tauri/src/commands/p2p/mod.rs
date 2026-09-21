@@ -31,3 +31,4 @@ pub mod upload_progress;
 pub mod init_incoming_upload;
 pub mod append_incoming_chunk;
 pub mod finalize_incoming_file;
+pub mod discard_incoming_upload;
