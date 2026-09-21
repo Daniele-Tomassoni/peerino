@@ -654,6 +654,11 @@
             let receivedChunks = [];
             let receivedSize = 0;
             let downloadCancelled = false;
+            // FIX: inactivity timeout — if the sender stops sending data
+            // (crash, suspension, connection lost) the browser must not
+            // hang forever on "Receiving... X%".
+            let inactivityTimer = null;
+            const INACTIVITY_TIMEOUT_MS = 30000;
             let isDownloadReady = false;
             let startTime = 0;
             let selectedFile = null;
@@ -954,6 +959,9 @@
                 // FIX: reset the cancellation flag at the start of every new
                 // download attempt (covers LAN→WebRTC fallback and retries).
                 downloadCancelled = false;
+                // FIX: clear any stale inactivity timer from a previous
+                // download attempt so it cannot fire during the new attempt.
+                clearInactivityTimer();
                 startBtn.disabled = true;
                 setHeaderBadge('Connecting...');
                 showDetecting();
@@ -1164,6 +1172,9 @@
 
                     connection.on('close', () => {
                         if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
+                        // FIX: connection gone — kill any inactivity timer
+                        // so a stale timeout cannot fire after the UI is reset.
+                        clearInactivityTimer();
                         log('Connection closed');
                         setStatus('Connection closed by sender.', 'error');
                         downloadBtn.classList.remove('show');
@@ -1171,6 +1182,7 @@
 
                     connection.on('error', (err) => {
                         if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
+                        clearInactivityTimer();
                         // Raw WebRTC errors may contain local IPs / network details:
                         // keep the detail in console, show a generic message in the UI.
                         console.error('Connection error details:', err);
@@ -1180,6 +1192,7 @@
 
                 peer.on('error', (err) => {
                     if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
+                    clearInactivityTimer();
                     console.error('PeerJS error details:', err);
                     setStatus('❌ Connection error. Check the link and retry.', 'error');
                 });
@@ -1203,6 +1216,7 @@
                             receivedSize = 0;
                             progressContainer.classList.remove('visible');
                             downloadBtn.classList.remove('show');
+                            clearInactivityTimer();
                             return;
                         }
                         if (meta.type === 'file_meta') {
@@ -1215,6 +1229,10 @@
                             // residual chunks from a previous cancelled attempt
                             // don't keep being dropped.
                             downloadCancelled = false;
+                            // FIX: start the inactivity timer — if the sender
+                            // stops sending after file_meta, we abort instead
+                            // of hanging forever.
+                            resetInactivityTimer();
                             startTime = Date.now();
                             log(`📄 Receiving "${fileName}" (${fileSize} bytes)`);
                             setStatus(`📥 Receiving "${fileName}"...`, 'loading');
@@ -1234,6 +1252,7 @@
                                 setStatus(`❌ ${meta.message || 'Unknown error from sender'}`, 'error');
                             }
                             downloadBtn.classList.remove('show');
+                            clearInactivityTimer();
                             return;
                         }
                     } catch (e) {
@@ -1260,6 +1279,9 @@
                 }
 
                 if (chunk) {
+                    // FIX: reset the inactivity timer on every chunk so a
+                    // slow-but-steady transfer never trips the timeout.
+                    resetInactivityTimer();
                     receivedChunks.push(chunk);
                     receivedSize += chunk.length;
                     const progress = fileSize > 0 ? (receivedSize / fileSize) * 100 : 0;
@@ -1274,10 +1296,45 @@
                         downloadBtn.textContent = `💾 Save "${fileName}"`;
                         downloadBtn.disabled = false;
                         progressContainer.classList.remove('visible');
+                        clearInactivityTimer();
                     }
                 } else {
                     log(`⚠️ Unhandled data: ${data}`);
                 }
+            }
+
+            // FIX: inactivity timeout — if the sender stops sending data
+            // (crash, suspension, connection lost) the browser must not
+            // hang forever on "Receiving... X%".
+            function resetInactivityTimer() {
+                if (inactivityTimer !== null) {
+                    clearTimeout(inactivityTimer);
+                }
+                inactivityTimer = setTimeout(() => {
+                    handleInactivityTimeout();
+                }, INACTIVITY_TIMEOUT_MS);
+            }
+
+            function clearInactivityTimer() {
+                if (inactivityTimer !== null) {
+                    clearTimeout(inactivityTimer);
+                    inactivityTimer = null;
+                }
+            }
+
+            function handleInactivityTimeout() {
+                if (downloadCancelled) {
+                    // Already cancelled explicitly by the sender — not a timeout.
+                    return;
+                }
+                log('⏱️ Transfer timed out (no data for 30s)');
+                setStatus('⏱️ Transfer timed out. The sender may be offline.', 'error');
+                downloadCancelled = true;
+                receivedChunks = [];
+                receivedSize = 0;
+                if (progressContainer) progressContainer.classList.remove('visible');
+                if (downloadBtn) downloadBtn.classList.remove('show');
+                inactivityTimer = null;
             }
 
             function updateProgress(pct) {
@@ -1300,6 +1357,9 @@
                 a.click();
                 document.body.removeChild(a);
                 setTimeout(() => URL.revokeObjectURL(url), 5000);
+                // FIX: file saved — kill the inactivity timer so it cannot
+                // fire after the user already has the file.
+                clearInactivityTimer();
                 setStatus('✅ Download completed!', 'success');
                 downloadBtn.classList.remove('show');
                 showPeerinoCta('download');
