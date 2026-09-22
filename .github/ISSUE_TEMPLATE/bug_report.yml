@@ -1,0 +1,102 @@
+name: Bug report
+description: Something is not working as expected
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Please fill in the
+        sections below. Issues missing reproduction steps may be closed.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight checklist
+      options:
+        - label: I have searched existing issues and this is not a duplicate
+          required: true
+        - label: I am using the latest release of Peerino
+          required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps. Be specific.
+      placeholder: |
+        1. Open Peerino
+        2. Generate a link for file X
+        3. Open the link in Firefox
+        4. ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Peerino version
+      description: Shown in the app header, or from the installer filename
+      placeholder: "1.0.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 10
+        - Windows 11
+        - Other (specify in "Additional context")
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser (if the issue involves the web receiver)
+      placeholder: "Firefox 128, Chrome 126, ..."
+  - type: dropdown
+    id: connection
+    attributes:
+      label: Connection type
+      description: The LED indicator in the app shows the path used
+      options:
+        - Direct (LAN)
+        - Direct (WAN)
+        - TURN relay
+        - Unknown
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: |
+        Open the developer console in the browser (F12) or the app
+        developer tools. Paste only the relevant lines. Redact any
+        peer IDs or file hashes you consider sensitive.
+      render: shell
+    validations:
+      required: false
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+    validations:
+      required: false
