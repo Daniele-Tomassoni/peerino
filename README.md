@@ -8,6 +8,27 @@ Peerino is an open-source desktop application for peer-to-peer file sharing. Sen
 
 ---
 
+## Screenshots
+
+![Peerino desktop app](peerino-website/assets/app-main.jpg)
+
+### How it works
+
+<table>
+  <tr>
+    <td width="50%">
+      <img src="peerino-website/assets/how-to-send.jpg" alt="Send a file: 1. select the file, 2. click Generate Link, 3. copy and send the link">
+      <p align="center"><strong>Send a file</strong></p>
+    </td>
+    <td width="50%">
+      <img src="peerino-website/assets/how-to-receive.jpg" alt="Receive a file: 1. click Create Inbox, 2. copy the generated link and send it">
+      <p align="center"><strong>Receive a file</strong></p>
+    </td>
+  </tr>
+</table>
+
+---
+
 ## ✨ Features
 
 - 🔗 **Share via link**: generate a link, share it, and the recipient downloads the file from their browser
