@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-22
+
+### Added
+- Hardcoded default TURN endpoint (`DEFAULT_TURN_CREDENTIALS_ENDPOINT`) so the
+  released binary works out-of-the-box without a `.env` file
+- SHA-256 integrity verification on browser receiver downloads
+- Bundle configuration for MSI and NSIS installers
+- `CONTRIBUTING.md` with setup, testing, and PR process
+- `notes/turn-limiting-design.md` documenting the TURN rate limiting design
+  (not implemented, informational)
+
+### Changed
+- `TURN_MAX_FILE_SIZE` default from 1024 bytes (bug) to 104,857,600 bytes (100 MB)
+- Landing page redesign with 4 download CTAs, feature cards, How-it-works section
+- Desktop layout optimized for 16:9 (1080px container)
+- README terminology aligned with UI ("Generate Link", "Create Inbox")
+- Privacy Policy and Terms updated to reflect Cloudflare TURN (was Metered)
+- Node.js minimum version in CONTRIBUTING from 18 to 20
+
+### Fixed
+- Download button on landing page now points to `/releases/latest` instead of
+  a pinned version
+- `.status-box.info` CSS class missing in browser receiver
+- `finalizeStarted` variable not declared (ReferenceError under strict mode)
+- Deploy marker added to `receiver.html` for cache verification
+
+### Removed
+- (nothing)
+
 ## [1.0.0] - 2026-09-21
 
 ### Added
