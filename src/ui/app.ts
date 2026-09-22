@@ -1380,19 +1380,14 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
         streamCancellations.set(streamId, false);
         const isStreamCancelled = () => streamCancellations.get(streamId) === true;
 
-        const channel = new Channel<unknown>();
-        channel.onmessage = async (raw) => {
-            // FIX: check cancellation flag FIRST, before any I/O.
-            // The Channel may still deliver queued chunks after cancel.
-            if (isStreamCancelled() || streamError) {
-                return;
-            }
+        // Serializza i callback per preservare l'ordine di conn.send() anche
+        // quando più callback si sospendono su bufferedamountlow.
+        // Vedi: bug corruzione file via TURN (hash mismatch, stessa dimensione).
+        let sendQueue: Promise<void> = Promise.resolve();
 
-            // FIX B Test 1: Tauri Channel delivers raw bytes as a plain
-            // array of numbers (not a Uint8Array). PeerJS does not recognize
-            // this as binary data and tries to serialize it with binarypack.pack(),
-            // which recurses on every element → stack overflow.
-            // Convert defensively before passing to conn.send().
+        const channel = new Channel<unknown>();
+        channel.onmessage = (raw) => {
+            // Conversione (identica all'attuale):
             let chunk: Uint8Array;
             if (raw instanceof Uint8Array) {
                 chunk = raw;
@@ -1404,55 +1399,64 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
                 return;
             }
 
-            // 1. Backpressure WebRTC DataChannel
-            if (conn.dataChannel && conn.dataChannel.bufferedAmount > 1024 * 1024) {
-                await new Promise<void>((resolve) => {
-                    const onLow = () => {
-                        conn.dataChannel!.removeEventListener('bufferedamountlow', onLow);
-                        resolve();
-                    };
-                    conn.dataChannel!.addEventListener('bufferedamountlow', onLow);
-                });
-            }
-
-            // 2. Send chunk to peer (wrapped in try/catch to handle closed conn)
-            try {
-                conn.send(chunk);
-            } catch (e) {
-                log('❌ conn.send failed: ' + getErrorMessage(e));
-                streamError = new Error('conn.send failed: ' + getErrorMessage(e));
-                return;
-            }
-
-            // 3. Update progress
-            bytesReceived += chunk.length;
-            const elapsedMs = Date.now() - startTime;
-            const speedMbps = elapsedMs > 0 ? (bytesReceived / (1024 * 1024)) / (elapsedMs / 1000) : 0;
-            const progress = Math.min(100, (bytesReceived / totalSize) * 100);
-            const existingEntry = activeUploads.get(uploadKey);
-            activeUploads.set(uploadKey, {
-                hash: fileInfo.hash,
-                filename: fileInfo.filename,
-                bytes_processed: bytesReceived,
-                total_bytes: totalSize,
-                progress: progress,
-                speed_mbps: speedMbps,
-                peer_id: conn.peer,
-                cancelled: existingEntry ? existingEntry.cancelled : false
-            });
-            renderUploadProgressList();
-
-            // 4. Ack Tauri every K chunks (flow control)
-            chunksInFlight++;
-            if (chunksInFlight >= K) {
-                try {
-                    await invoke('stream_ack', { streamId });
-                } catch (e) {
-                    log('⚠️ stream_ack failed: ' + getErrorMessage(e));
-                    streamError = new Error('stream_ack failed: ' + getErrorMessage(e));
+            // Incatena l'elaborazione al termine della precedente.
+            sendQueue = sendQueue.then(async () => {
+                // FIX: check cancellation flag FIRST, before any I/O.
+                // The Channel may still deliver queued chunks after cancel.
+                if (isStreamCancelled() || streamError) {
+                    return;
                 }
-                chunksInFlight = 0;
-            }
+
+                // Backpressure (identica all'attuale):
+                if (conn.dataChannel && conn.dataChannel.bufferedAmount > 1024 * 1024) {
+                    await new Promise<void>((resolve) => {
+                        const onLow = () => {
+                            conn.dataChannel!.removeEventListener('bufferedamountlow', onLow);
+                            resolve();
+                        };
+                        conn.dataChannel!.addEventListener('bufferedamountlow', onLow);
+                    });
+                }
+
+                // Invio (identico all'attuale, incluso try/catch):
+                try {
+                    conn.send(chunk);
+                } catch (e) {
+                    log('❌ conn.send failed: ' + getErrorMessage(e));
+                    streamError = new Error('conn.send failed: ' + getErrorMessage(e));
+                    return;
+                }
+
+                // Update progress
+                bytesReceived += chunk.length;
+                const elapsedMs = Date.now() - startTime;
+                const speedMbps = elapsedMs > 0 ? (bytesReceived / (1024 * 1024)) / (elapsedMs / 1000) : 0;
+                const progress = Math.min(100, (bytesReceived / totalSize) * 100);
+                const existingEntry = activeUploads.get(uploadKey);
+                activeUploads.set(uploadKey, {
+                    hash: fileInfo.hash,
+                    filename: fileInfo.filename,
+                    bytes_processed: bytesReceived,
+                    total_bytes: totalSize,
+                    progress: progress,
+                    speed_mbps: speedMbps,
+                    peer_id: conn.peer,
+                    cancelled: existingEntry ? existingEntry.cancelled : false
+                });
+                renderUploadProgressList();
+
+                // Flow control (identico all'attuale):
+                chunksInFlight++;
+                if (chunksInFlight >= K) {
+                    try {
+                        await invoke('stream_ack', { streamId });
+                    } catch (e) {
+                        log('⚠️ stream_ack failed: ' + getErrorMessage(e));
+                        streamError = new Error('stream_ack failed: ' + getErrorMessage(e));
+                    }
+                    chunksInFlight = 0;
+                }
+            });
         };
 
         // Start the stream from Rust
