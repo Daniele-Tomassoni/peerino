@@ -15,6 +15,8 @@
   You should have received a copy of the GNU Affero General Public License
   along with this program. If not, see <https://www.gnu.org/licenses/>.
 -->
+<!-- Peerino receiver — see https://github.com/Daniele-Tomassoni/peerino -->
+<!-- Deployed via GitHub Actions (Cloudflare Pages) -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -173,6 +175,10 @@
         .status-box.loading {
             color: var(--yellow);
             border-color: rgba(234, 179, 8, 0.15);
+        }
+        .status-box.info {
+            color: var(--accent);
+            border-color: rgba(56, 189, 248, 0.15);
         }
         .spinner {
             display: inline-block;
@@ -662,6 +668,10 @@
             // cancels or starts a new transfer while a previous verification
             // is still running (crypto.subtle.digest on 100MB takes 1-2s).
             let downloadGeneration = 0;
+            // Guard to prevent double-finalize on the same download.
+            // Set to true when the completion branch runs; reset to false
+            // on every new file_meta or transfer_cancelled.
+            let finalizeStarted = false;
             // FIX: inactivity timeout — if the sender stops sending data
             // (crash, suspension, connection lost) the browser must not
             // hang forever on "Receiving... X%".
