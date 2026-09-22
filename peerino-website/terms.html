@@ -94,8 +94,10 @@
         <h2>1. What Peerino Is</h2>
         <p>
             Peerino is a <strong>peer-to-peer file sharing tool</strong>. It does not
-            host, store, or moderate any files. All transfers happen directly between
-            users, without passing through our servers.
+            host, store, or moderate any files. Peerino does not operate any file
+            storage servers. All transfers happen directly between users when possible.
+            When a direct connection is impossible (e.g. symmetric NAT, mobile
+            networks), a TURN relay (Cloudflare) forwards the encrypted traffic.
         </p>
 
         <h2>2. Your Responsibility</h2>

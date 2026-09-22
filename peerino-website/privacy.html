@@ -102,7 +102,9 @@
             <li>No personal information (name, email, IP address logs)</li>
             <li>No usage analytics or telemetry</li>
             <li>No cookies for profiling or advertising</li>
-            <li>No files: all transfers happen directly between users (P2P)</li>
+            <li>No files: on LAN and STUN, transfers are direct between peers.
+                When a direct connection is impossible, a TURN relay (Cloudflare)
+                forwards the encrypted traffic.</li>
         </ul>
 
         <h2>Data Stored Locally on Your Device</h2>
@@ -110,7 +112,9 @@
             <li><strong>Peer ID</strong>: a randomly generated identifier stored in
                 <code>config/peer_id.json</code></li>
             <li><strong>Shared files</strong>: stored in your local <code>shared-folder/</code></li>
-            <li><strong>Configuration</strong>: stored in <code>.env</code> and <code>config/</code></li>
+            <li><strong>Configuration</strong>: stored in <code>config/</code>.
+                A <code>.env</code> file is used only during development or for
+                manual overrides; it is not required for the released app.</li>
         </ul>
         <p>
             All this data stays on your device. You can delete it at any time by
@@ -124,12 +128,16 @@
         </p>
         <ul>
             <li><strong>Signaling</strong>: <code>0.peerjs.com</code> sees temporary
-                connection metadata (Peer IDs), not file content.</li>
+                connection metadata (Peer IDs and public IP addresses for ICE
+                negotiation), not file content.</li>
             <li><strong>STUN servers</strong>: public servers (Google, Cloudflare, etc.)
                 used to discover your public IP for direct connections.</li>
-            <li><strong>TURN server</strong> (if configured): Metered, used as a relay
-                only when a direct connection is impossible. It sees encrypted traffic
-                that it cannot decrypt.</li>
+            <li><strong>TURN server</strong> (Cloudflare, if a direct connection is
+                impossible): Cloudflare TURN relays the encrypted traffic when a
+                direct peer-to-peer connection cannot be established (e.g. symmetric
+                NAT, mobile networks). The relay sees encrypted traffic only and
+                cannot decrypt it. Peerino does not operate any file storage
+                servers.</li>
         </ul>
 
         <h2>Your Rights (GDPR)</h2>
