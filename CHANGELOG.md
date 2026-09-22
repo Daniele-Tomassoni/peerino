@@ -76,7 +76,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Peer ID masked in user-visible logs (only first 12 chars shown)
 - File hash masked in browser logs
 - WebRTC DataChannel with DTLS encryption (self-signed certs)
-- No cloud storage: files never leave the local network unless relayed via TURN (encrypted, cannot be decrypted by relay)
+- No file storage on any server: files are never stored remotely. When relayed via TURN, encrypted packets transit through Cloudflare (not stored, not decryptable).
 
 ### Performance
 - Channel-based streaming for P2P download (replaces per-chunk IPC + base64)

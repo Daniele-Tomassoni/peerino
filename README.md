@@ -75,9 +75,13 @@ Peerino is an open-source desktop application for peer-to-peer file sharing. Sen
 
 Download the latest version from [GitHub Releases](https://github.com/Daniele-Tomassoni/peerino/releases).
 
-1. Download the `.msi` or `.exe` file
-2. Run the installer
-3. Launch Peerino from the Start menu
+Three options:
+
+- **`peerino-installer.exe`** (recommended) — NSIS installer with wizard
+- **`peerino-installer.msi`** — MSI installer (enterprise / silent install)
+- **`peerino-portable.exe`** — portable executable, no installation required
+
+For the installer, run the `.exe` or `.msi` file and launch Peerino from the Start menu. For the portable, just run the `.exe`.
 
 ---
 
@@ -128,7 +132,12 @@ The script starts Vite, waits, compiles the Rust backend, waits for Defender's s
 
 ## ⚙️ Configuration
 
-Copy `.env.example` to `.env` and fill in the variables:
+**The released app works without any configuration.** TURN credentials are
+fetched automatically from a Cloudflare Worker (endpoint hardcoded in the
+binary). No `.env` file is required.
+
+If you are building from source, or want to self-host the TURN Worker, copy
+`.env.example` to `.env` and fill in the variables:
 
 ```bash
 cp .env.example .env
@@ -178,6 +187,8 @@ cp .env.example .env
 ## 🤝 Contributing
 
 Peerino is open source and contributions are welcome.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide.
 
 1. Fork the repository
 2. Create a branch for your feature (`git checkout -b feature/amazing`)
