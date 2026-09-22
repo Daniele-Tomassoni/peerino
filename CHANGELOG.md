@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-09-22
+
+### Fixed
+- Async channel callback reordering under backpressure caused file
+  corruption on TURN relay downloads. Downloads completed with the same
+  file size but a different SHA-256 hash than the original. The channel
+  callback is now serialized through a Promise queue, preserving the
+  order of `conn.send()` calls even when multiple callbacks suspend on
+  `bufferedamountlow`.
+
 ## [1.0.1] - 2026-09-22
 
 ### Added
