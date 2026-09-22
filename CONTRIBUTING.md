@@ -8,7 +8,7 @@ the development setup, testing, and pull request process.
 Peerino uses **Tauri 2.0** (Rust backend) + **TypeScript/Vite** (frontend).
 You need:
 
-- [Node.js](https://nodejs.org/) (LTS, 18+)
+- [Node.js](https://nodejs.org/) (LTS, 20+)
 - [Rust](https://rust-lang.org/) (latest stable)
 - [Cargo](https://doc.rust-lang.org/cargo/) (bundled with Rust)
 - Windows 10 or 11 (64-bit) — the app is Windows-only for now
@@ -65,7 +65,8 @@ npm test
 
 - **Rust**: follow the existing style. Use `cargo fmt` before committing.
 - **TypeScript**: use 4 spaces, no semicolons (matching the existing codebase).
-- **Comments**: write in English. Avoid Italian in code or commit messages.
+- **Comments**: prefer English for new comments and commit messages.
+      Existing Italian comments may be translated opportunistically.
 - **License**: by contributing, you agree that your contributions are
   licensed under [AGPL-3.0-or-later](LICENSE).
 

@@ -49,7 +49,7 @@ Peerino is an open-source desktop application for peer-to-peer file sharing. Sen
 
 1. Open Peerino
 2. Select the file you want to share
-3. Click **Share** — the link is shown with a **Copy** button. Click Copy to copy it to the clipboard.
+3. Click **Generate Link** — the link is shown with a **Copy** button. Click Copy to copy it to the clipboard.
 4. Paste it in an email, chat, or any other channel
 5. The recipient opens the link in their browser and downloads the file
 6. The file is streamed directly from your computer via WebRTC (or a TURN relay if NAT requires it)
@@ -57,7 +57,7 @@ Peerino is an open-source desktop application for peer-to-peer file sharing. Sen
 ### Receive a file from someone who doesn't have Peerino
 
 1. Open Peerino
-2. Click **Inbox** — a link is generated
+2. Click **Create Inbox** — a link is generated
 3. Copy the link and send it to whoever wants to send you a file
 4. The recipient opens the link in their browser and uploads the file
 5. The file arrives directly on your computer
