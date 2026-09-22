@@ -9,6 +9,32 @@
     "devUrl": "http://localhost:5173",
     "frontendDist": "../dist"
   },
+  "bundle": {
+    "active": true,
+    "targets": ["msi", "nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "publisher": "Daniele Tomassoni",
+    "copyright": "© 2026 Daniele Tomassoni",
+    "category": "Utility",
+    "shortDescription": "P2P file sharing without cloud",
+    "longDescription": "Peerino is a peer-to-peer file sharing app: send a file to anyone via a link, no account, no cloud, no intermediary.",
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["English", "Italian"],
+        "displayLanguageSelector": false
+      }
+    }
+  },
   "app": {
     "security": {
       "csp": "default-src 'self'; connect-src 'self' wss://*.peerjs.com wss://*.metered.ca stun: stun.l.google.com:19302 stun1.l.google.com:19302 https://global.turn.metered.ca;"

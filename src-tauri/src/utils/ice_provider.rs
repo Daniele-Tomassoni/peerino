@@ -42,6 +42,25 @@ use std::time::Duration;
 const METERED_DEFAULT_BASE: &str = "https://peerino.metered.live/api/v1";
 const FETCH_TIMEOUT_SECS: u64 = 10;
 
+/// Default Cloudflare Worker TURN proxy endpoint.
+///
+/// This is a PUBLIC endpoint (not a secret). It is hardcoded as a fallback
+/// so that the release binary works out-of-the-box even without a `.env` file.
+/// Developers can override it via the `TURN_CREDENTIALS_ENDPOINT` env var.
+const DEFAULT_TURN_CREDENTIALS_ENDPOINT: &str =
+    "https://peerino-turn-proxy.shaft-bdc.workers.dev/api/turn-credentials";
+
+/// Resolves the Cloudflare Worker TURN proxy endpoint.
+///
+/// Priority: `TURN_CREDENTIALS_ENDPOINT` env var (if set and non-empty) >
+/// `DEFAULT_TURN_CREDENTIALS_ENDPOINT` (hardcoded public endpoint).
+fn resolve_turn_credentials_endpoint() -> String {
+    std::env::var("TURN_CREDENTIALS_ENDPOINT")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| DEFAULT_TURN_CREDENTIALS_ENDPOINT.to_string())
+}
+
 /// Explicit provider preference from ICE_PROVIDER env var.
 /// Valori validi: "metered" | "coturn" | "static".
 /// Se non impostato, comportamento auto (Metered → Coturn → Static).
@@ -194,9 +213,10 @@ pub async fn fetch_ice_servers(ttl_secs: Option<u64>) -> IceResolution {
         }
 
         IceProviderPreference::Cloudflare => {
-            if let Ok(endpoint) = std::env::var("TURN_CREDENTIALS_ENDPOINT") {
-                if !endpoint.trim().is_empty() {
-                    match fetch_cloudflare_turn(&endpoint).await {
+            let endpoint = resolve_turn_credentials_endpoint();
+            log::info!("[TURN] Using credentials endpoint: {}", endpoint);
+            if !endpoint.trim().is_empty() {
+                match fetch_cloudflare_turn(&endpoint).await {
                         Ok(entries) => {
                             log::info!(
                                 "✅ ICE servers fetched from Cloudflare Worker ({} entries)",
@@ -229,7 +249,6 @@ pub async fn fetch_ice_servers(ttl_secs: Option<u64>) -> IceResolution {
                         }
                     }
                 }
-            }
             log::warn!(
                 "⚠️ ICE_PROVIDER=cloudflare ma TURN_CREDENTIALS_ENDPOINT non impostato. Fallback a StaticOnly."
             );
@@ -316,10 +335,11 @@ pub async fn fetch_ice_servers(ttl_secs: Option<u64>) -> IceResolution {
                 }
             }
 
-            // Provider 2: Cloudflare Worker TURN proxy (if TURN_CREDENTIALS_ENDPOINT is present)
-            if let Ok(endpoint) = std::env::var("TURN_CREDENTIALS_ENDPOINT") {
-                if !endpoint.trim().is_empty() {
-                    match fetch_cloudflare_turn(&endpoint).await {
+            // Provider 2: Cloudflare Worker TURN proxy
+            let endpoint = resolve_turn_credentials_endpoint();
+            log::info!("[TURN] Using credentials endpoint: {}", endpoint);
+            if !endpoint.trim().is_empty() {
+                match fetch_cloudflare_turn(&endpoint).await {
                         Ok(entries) => {
                             log::info!(
                                 "✅ ICE servers fetched from Cloudflare Worker ({} entries)",
@@ -362,8 +382,6 @@ pub async fn fetch_ice_servers(ttl_secs: Option<u64>) -> IceResolution {
                         }
                     }
                 }
-            }
-
             // Provider 3: coturn REST (if TURN_AUTH_SECRET + TURN_URLS are present)
             let cfg = if let Some(ttl) = ttl_secs {
                 ice_link_config_from_env_with_ttl(ttl)
