@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-09-22
+
+### Changed
+- Unified browser receiver: the LAN HTTP server now serves the same
+  `peerino-website/receiver.html` used by peerino.com. Eliminates the
+  drift between the two files that caused the LAN receiver to miss TURN
+  support and several fixes (hash verification, cancellation, inactivity
+  timeout, log masking).
+
+### Removed
+- `src/ui/web-receiver.html` (redundant; unified with the deployed receiver).
+
 ## [1.0.2] - 2026-09-22
 
 ### Fixed

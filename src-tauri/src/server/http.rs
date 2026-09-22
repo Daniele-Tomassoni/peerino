@@ -309,7 +309,7 @@ async fn stream_file_response(
 /// Available on LAN and via Cloudflare Tunnel (reverse box):
 /// the recipient opens the link and the page connects P2P to the sender (no relay server).
 async fn receiver_page_handler() -> Response {
-    let html = include_str!("../../../src/ui/web-receiver.html");
+    let html = include_str!("../../../peerino-website/receiver.html");
     let mut headers = axum::http::HeaderMap::new();
     headers.insert(header::CONTENT_TYPE, "text/html; charset=utf-8".parse().unwrap());
     (StatusCode::OK, headers, html).into_response()
