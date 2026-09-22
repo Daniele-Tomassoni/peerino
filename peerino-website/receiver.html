@@ -654,6 +654,14 @@
             let receivedChunks = [];
             let receivedSize = 0;
             let downloadCancelled = false;
+            // SHA-256 hash expected from the sender (file_meta.hash).
+            // Empty string = no hash provided (old sender, no integrity check).
+            let expectedHash = '';
+            // Generation token: incremented on every new download start.
+            // Used to ignore stale verifyDownloadHash results when the user
+            // cancels or starts a new transfer while a previous verification
+            // is still running (crypto.subtle.digest on 100MB takes 1-2s).
+            let downloadGeneration = 0;
             // FIX: inactivity timeout — if the sender stops sending data
             // (crash, suspension, connection lost) the browser must not
             // hang forever on "Receiving... X%".
@@ -959,6 +967,10 @@
                 // FIX: reset the cancellation flag at the start of every new
                 // download attempt (covers LAN→WebRTC fallback and retries).
                 downloadCancelled = false;
+                // Reset the integrity-check state so a previous download's
+                // hash / finalize guard cannot leak into this attempt.
+                expectedHash = '';
+                finalizeStarted = false;
                 // FIX: clear any stale inactivity timer from a previous
                 // download attempt so it cannot fire during the new attempt.
                 clearInactivityTimer();
@@ -1211,9 +1223,16 @@
                         if (meta.type === 'transfer_cancelled') {
                             log('⏹ Transfer cancelled by sender');
                             downloadCancelled = true;
-                            setStatus('⏹ Transfer cancelled by sender', 'error');
+                            setStatus('<<< Transfer cancelled by sender', 'error');
                             receivedChunks = [];
                             receivedSize = 0;
+                            // Invalidate any in-flight hash verification for
+                            // the cancelled download and drop the expected
+                            // hash so a late finalizeDownload cannot match
+                            // a stale value.
+                            downloadGeneration++;
+                            finalizeStarted = false;
+                            expectedHash = '';
                             progressContainer.classList.remove('visible');
                             downloadBtn.classList.remove('show');
                             clearInactivityTimer();
@@ -1224,6 +1243,14 @@
                             fileSize = meta.size || 0;
                             receivedChunks = [];
                             receivedSize = 0;
+                            // New download → invalidate any in-flight
+                            // hash verification from a previous attempt,
+                            // reset the finalize guard, and remember the
+                            // hash declared by the sender (normalized to
+                            // lowercase hex for comparison).
+                            downloadGeneration++;
+                            finalizeStarted = false;
+                            expectedHash = (meta.hash || '').toLowerCase();
                             // FIX: a new file_meta means the sender restarted the
                             // transfer — clear any stale cancellation flag so
                             // residual chunks from a previous cancelled attempt
@@ -1290,13 +1317,18 @@
                     const eta = speedMbps > 0 ? (fileSize - receivedSize) / (1024 * 1024) / speedMbps : 0;
                     downloadBtn.textContent = `⏳ Receiving... (${Math.round(progress)}%) ${formatSpeed(speedMbps * 1024 * 1024)} ${formatETA(eta)}`.trim();
 
-                    if (receivedSize >= fileSize && fileSize > 0) {
-                        log('✅ Download complete!');
-                        setStatus(`✅ Received "${fileName}" (${(fileSize / 1024 / 1024).toFixed(2)} MB)`, 'success');
-                        downloadBtn.textContent = `💾 Save "${fileName}"`;
-                        downloadBtn.disabled = false;
+                    if (receivedSize >= fileSize && fileSize > 0 && !finalizeStarted) {
+                        finalizeStarted = true;
+                        log('✅ Download complete — verifying integrity...');
                         progressContainer.classList.remove('visible');
                         clearInactivityTimer();
+                        // Keep the save button DISABLED until the async
+                        // SHA-256 verification finishes. finalizeDownload()
+                        // is fire-and-forget on purpose: the on('data')
+                        // callback is synchronous and must not await.
+                        downloadBtn.textContent = `⏳ Verifying integrity...`;
+                        downloadBtn.disabled = true;
+                        finalizeDownload();
                     }
                 } else {
                     log(`⚠️ Unhandled data: ${data}`);
@@ -1464,6 +1496,95 @@
                     return computeHashCryptoSubtle(file);
                 }
                 return computeFileHash(file);
+            }
+
+            // ===== DOWNLOAD FINALIZATION (SHA-256 integrity check) =====
+            /**
+             * Async finalizer for a completed P2P download.
+             *
+             * Called (fire-and-forget) from the synchronous DataChannel
+             * `on('data')` handler once receivedSize >= fileSize.
+             * Responsibilities:
+             *   1. Compute the SHA-256 of the assembled file.
+             *   2. Compare it with the hash declared by the sender in
+             *      file_meta (expectedHash).
+             *   3. Enable the Save button ONLY if the hash matches, or if
+             *      the sender did not provide a hash (unverified label).
+             *
+             * If the user cancels or starts a new download while the
+             * digest is being computed, `downloadGeneration` is bumped and
+             * this function bails out before touching any UI state.
+             */
+            async function finalizeDownload() {
+                const myGen = downloadGeneration;
+                const chunks = receivedChunks.slice();
+                const hash = expectedHash;
+
+                // --- Case 1: sender did not declare a hash -------------------
+                if (!hash) {
+                    // Refinement 2: also bail out if the user cancelled
+                    // while we were still in the "no hash" branch.
+                    if (myGen !== downloadGeneration || downloadCancelled) return;
+                    log('⚠️ No hash provided by sender — integrity not verified');
+                    // Refinement 3: use 'info', not 'success' — we have no
+                    // guarantee this file is intact.
+                    setStatus(`✅ Received "${fileName}" (${(fileSize / 1024 / 1024).toFixed(2)} MB) · Unverified`, 'info');
+                    downloadBtn.textContent = `💾 Save "${fileName}" (unverified)`;
+                    downloadBtn.disabled = false;
+                    return;
+                }
+
+                // --- Compute SHA-256 -----------------------------------------
+                let actualHash;
+                try {
+                    // NOTE: `new Blob(chunks)` is lazy, but `arrayBuffer()`
+                    // below materialises the whole file in memory. Peak
+                    // memory is roughly 2x the file size for a brief moment.
+                    // With TURN_MAX_FILE_SIZE = 100 MB (default) this is
+                    // ~200 MB, acceptable. If the limit is ever raised,
+                    // switch to incremental hashing over chunks.
+                    const blob = new Blob(chunks);
+                    const buf = await blob.arrayBuffer();
+                    const digest = await crypto.subtle.digest('SHA-256', buf);
+                    actualHash = [...new Uint8Array(digest)]
+                        .map(b => b.toString(16).padStart(2, '0'))
+                        .join('');
+                } catch (e) {
+                    // Refinement 2: bail out on cancel / supersede too.
+                    if (myGen !== downloadGeneration || downloadCancelled) return;
+                    log(`❌ Hash computation failed: ${e.message || e}`);
+                    setStatus(`❌ Could not verify integrity of "${fileName}"`, 'error');
+                    // Technical failure, not evidence of corruption:
+                    // allow save with an explicit label so the user
+                    // does not lose the file.
+                    downloadBtn.textContent = `💾 Save "${fileName}" (verification failed)`;
+                    downloadBtn.disabled = false;
+                    return;
+                }
+
+                // Refinement 2: double-check — generation changed OR the
+                // user clicked cancel while the digest was running.
+                if (myGen !== downloadGeneration || downloadCancelled) {
+                    log('⏭️ Verification result discarded (cancelled or superseded)');
+                    return;
+                }
+
+                // --- Compare -------------------------------------------------
+                if (actualHash === hash) {
+                    log(`✅ Integrity verified (SHA-256 ${actualHash.slice(0, 12)}…)`);
+                    setStatus(
+                        `✅ Received "${fileName}" (${(fileSize / 1024 / 1024).toFixed(2)} MB) · Integrity verified`,
+                        'success'
+                    );
+                    downloadBtn.textContent = `💾 Save "${fileName}"`;
+                    downloadBtn.disabled = false;
+                } else {
+                    log(`❌ Hash mismatch: expected ${hash.slice(0, 12)}… got ${actualHash.slice(0, 12)}…`);
+                    setStatus(`❌ Integrity check failed. The file may be corrupted. Do not save.`, 'error');
+                    // Per design: do NOT enable the save button on mismatch.
+                    downloadBtn.textContent = `❌ Integrity check failed`;
+                    downloadBtn.disabled = true;
+                }
             }
 
             // ===== LOCALIZATION =====
