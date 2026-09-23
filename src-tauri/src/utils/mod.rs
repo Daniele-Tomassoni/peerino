@@ -19,15 +19,41 @@ pub mod peer_id;
 pub mod turn_creds;
 pub mod ice_provider;
 
-/// Verifies that a filename is safe (no path traversal).
-/// Rejects empty names or those containing `..`, `/` or `\`.
-/// Shared among various handlers to avoid duplication and maintain
-/// consistent file name validation across the entire backend.
+/// Verifies that a filename is a single, ordinary filesystem component.
+/// Rejects path traversal, Windows drive-relative/absolute syntax, reserved
+/// device names, control characters, and names Windows would normalize.
 pub fn is_safe_filename(filename: &str) -> bool {
-    !filename.is_empty()
-        && !filename.contains("..")
-        && !filename.contains('/')
-        && !filename.contains('\\')
+    if filename.is_empty()
+        || filename.contains('/')
+        || filename.contains('\\')
+        || filename.contains(':')
+    {
+        return false;
+    }
+
+    use std::path::{Component, Path};
+    let mut components = Path::new(filename).components();
+    let first = components.next();
+    if components.next().is_some() || !matches!(first, Some(Component::Normal(_))) {
+        return false;
+    }
+
+    let upper = filename.to_uppercase();
+    let stem = upper.split('.').next().unwrap_or("");
+    const RESERVED: &[&str] = &[
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6",
+        "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7",
+        "LPT8", "LPT9",
+    ];
+    if RESERVED.contains(&stem) {
+        return false;
+    }
+
+    if filename.ends_with(' ') || filename.ends_with('.') {
+        return false;
+    }
+
+    !filename.chars().any(char::is_control)
 }
 
 /// Returns the directory where the app executable is located.
@@ -40,4 +66,39 @@ pub fn get_app_dir() -> String {
         .and_then(|exe_path| exe_path.parent().map(|p| p.to_path_buf()))
         .map(|p| p.to_string_lossy().to_string())
         .unwrap_or_else(|| ".".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_safe_filename;
+
+    #[test]
+    fn rejects_drive_relative_filename() {
+        assert!(!is_safe_filename("C:evil.txt"));
+    }
+
+    #[test]
+    fn rejects_windows_absolute_filename() {
+        assert!(!is_safe_filename("C:\\evil.txt"));
+    }
+
+    #[test]
+    fn rejects_parent_traversal_filename() {
+        assert!(!is_safe_filename("..\\evil.txt"));
+    }
+
+    #[test]
+    fn rejects_windows_reserved_device_name() {
+        assert!(!is_safe_filename("CON"));
+    }
+
+    #[test]
+    fn accepts_regular_filename() {
+        assert!(is_safe_filename("file.txt"));
+    }
+
+    #[test]
+    fn accepts_unicode_filename() {
+        assert!(is_safe_filename("rapporté.txt"));
+    }
 }
