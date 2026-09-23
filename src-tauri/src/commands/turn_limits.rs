@@ -70,10 +70,9 @@ mod tests {
 
     #[test]
     fn default_limits() {
-        // Default 100 MB (Cloudflare TURN free tier, 1 TB/month egress).
-        // Previously 1024 (1 KB) to protect Metered free tier (500 MB/month).
-        assert_eq!(get_turn_max_file_size(), 104_857_600);
-        // Buffer = 104857600 + 10485760 = 115343360 bytes (+10%)
-        assert_eq!(get_turn_max_file_size_buffer(), 115_343_360);
+        // Default 10 MB.
+        assert_eq!(get_turn_max_file_size(), 10_485_760);
+        // Buffer = 10485760 + 1048576 = 11534336 bytes (+10%)
+        assert_eq!(get_turn_max_file_size_buffer(), 11_534_336);
     }
 }
