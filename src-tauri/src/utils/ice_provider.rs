@@ -34,7 +34,6 @@
 
 use crate::utils::turn_creds::{
     ice_link_config_from_env, ice_link_config_from_env_with_ttl, IceLinkConfig,
-    REGIONAL_STUN_URLS, split_urls,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::{Deserialize, Serialize};
@@ -409,14 +408,9 @@ pub async fn fetch_ice_servers(ttl_secs: Option<u64>) -> IceResolution {
 pub fn build_browser_ice_servers(resolution: &IceResolution) -> Vec<IceServerEntry> {
     let mut out: Vec<IceServerEntry> = Vec::new();
 
-    // 1) STUN entry. Use the config's own list if present (coturn/static),
-    // otherwise fall back to the regional list so users behind a blocked
-    // Google/Cloudflare have a reachable STUN server.
-    let stun_urls: Vec<String> = if !resolution.config.stun_urls.is_empty() {
-        resolution.config.stun_urls.clone()
-    } else {
-        split_urls(REGIONAL_STUN_URLS)
-    };
+    // 1) STUN entry. Use only the configured list; Cloudflare STUN is
+    // already included by the active provider when applicable.
+    let stun_urls: Vec<String> = resolution.config.stun_urls.clone();
     if !stun_urls.is_empty() {
         out.push(IceServerEntry {
             urls: stun_urls,

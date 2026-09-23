@@ -46,12 +46,6 @@ pub const DEFAULT_CRED_TTL_SECS: u64 = 7200; // 2 hours
 pub const DEFAULT_STUN_URLS: &str =
     "stun:stun.miwifi.com:3478,stun:stun.chat.bilibili.com:3478,stun:stun.rtc.yandex.net:3478,stun:stun.l.google.com:19302,stun:stun.cloudflare.com:3478,stun:stun1.l.google.com:19302";
 
-/// Regional STUN servers for users in regions where Google and Cloudflare
-/// STUN are blocked (notably China and Russia). Used as fallback when the
-/// active provider (Cloudflare/Metered) does not carry its own STUN list.
-pub const REGIONAL_STUN_URLS: &str =
-    "stun:stun.miwifi.com:3478,stun:stun.chat.bilibili.com:3478,stun:stun.rtc.yandex.net:3478";
-
 /// Ephemeral TURN credentials ready to be embedded in a link.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TurnCredentials {
@@ -73,7 +67,7 @@ pub struct IceLinkConfig {
 }
 
 /// Splits a comma-separated URL list from an env var, trimming empties.
-pub fn split_urls(raw: &str) -> Vec<String> {
+fn split_urls(raw: &str) -> Vec<String> {
     raw.split(',')
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
