@@ -33,8 +33,8 @@ Peerino is an open-source desktop application for peer-to-peer file sharing. Sen
 
 - 🔗 **Share via link**: generate a link, share it, and the recipient downloads the file from their browser
 - 📥 **Inbox**: receive files from anyone via a link, without them needing to install Peerino
-- 🔒 **Privacy**: file content is encrypted end-to-end with DTLS (WebRTC data channel). Note: WebRTC uses ephemeral self-signed certificates, so peer identity is not verified through a PKI. The signaling server sees connection metadata. If a TURN relay is used, it sees encrypted traffic only, but consumes ~2x bandwidth.
-- 🏠 **LAN fallback**: direct transfer on the same network, without going through the internet
+- 🔒 **Privacy**: file content is encrypted end-to-end with DTLS on all WebRTC connections (direct LAN, STUN, TURN). Note: WebRTC uses ephemeral self-signed certificates, so peer identity is not verified through a PKI. The signaling server sees connection metadata. If a TURN relay is used, it sees encrypted traffic only, but consumes ~2x bandwidth.
+- 🏠 **LAN fallback**: direct transfer on the same network, without going through the internet. Uses plain HTTP (not encrypted) for maximum speed; only active when both peers are on the same local network.
 - ⚡ **WebRTC P2P**: direct peer-to-peer connection when possible
 - 🔄 **TURN relay**: when NAT requires it, a Cloudflare TURN relay forwards the encrypted data
 - ✅ **Integrity verification**: SHA-256 hash verified on incoming transfers (browser → app). The hash is computed incrementally by the sender and compared by the receiver; mismatches are rejected before saving.
@@ -165,8 +165,8 @@ cp .env.example .env
 
 ## 🔐 Privacy & Security
 
-- **End-to-end encryption**: all WebRTC connections use DTLS
-- **No central server for file storage**: files are never stored on a remote server. On LAN and STUN, transfers are direct. When NAT requires it, a TURN relay forwards the encrypted data.
+- **End-to-end encryption**: all WebRTC connections (STUN, TURN, internet) use DTLS.
+- **No central server for file storage**: files are never stored on a remote server. On LAN and STUN, transfers are direct. When NAT requires it, a TURN relay forwards the encrypted data. When both peers are on the same local network, Peerino can fall back to a faster plain-HTTP LAN transfer; this path is not encrypted but never leaves the local network.
 - **No account**: no registration, no login
 - **Minimal metadata**: the link contains the filename, the file hash, and the sender's Peer ID. Whoever has the link can download the file as long as the sender is online and the file is still in `shared-folder/`.
 - **Link expiration**: relay links and inbox links expire after 24 hours. Direct P2P-to-Web links do not have a time-based expiry — they work as long as the sender has the file in `shared-folder/` and Peerino is running.

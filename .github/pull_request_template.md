@@ -29,6 +29,7 @@
 - [ ] I have updated the documentation if needed
 - [ ] I have added an entry to `CHANGELOG.md` under `[Unreleased]` if this is user-facing
 - [ ] My changes are compatible with the project's constraints (no cloud, no accounts, no intermediaries)
+- [ ] I have read the [Contributor License Agreement](../CONTRIBUTING.md#contributor-license-agreement) and agree to its terms
 
 ## Notes for reviewers
 

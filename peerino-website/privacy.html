@@ -105,6 +105,11 @@
             <li>No files: on LAN and STUN, transfers are direct between peers.
                 When a direct connection is impossible, a TURN relay (Cloudflare)
                 forwards the encrypted traffic.</li>
+            <li><strong>LAN fallback (not encrypted):</strong> when both peers are on
+                the same local network, Peerino can use a direct plain-HTTP transfer
+                for speed. This path is not encrypted. It only activates when both
+                devices are on the same local network and never routes through the
+                internet.</li>
         </ul>
 
         <h2>Data Stored Locally on Your Device</h2>
