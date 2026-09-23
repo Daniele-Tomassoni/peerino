@@ -258,12 +258,19 @@ async fn stream_file_response(
         header::CONTENT_TYPE,
         "application/octet-stream".parse().unwrap(),
     );
-    response_headers.insert(
-        header::CONTENT_DISPOSITION,
-        format!("attachment; filename=\"{}\"", file_info.filename)
-            .parse()
-            .unwrap(),
+    let safe_ascii: String = file_info.filename.chars()
+        .map(|c| {
+            if c.is_ascii() && !c.is_control() && c != '"' && c != '\\' { c } else { '_' }
+        })
+        .collect();
+    let encoded_utf8 = urlencoding::encode(&file_info.filename);
+    let disposition = format!(
+        "attachment; filename=\"{}\"; filename*=UTF-8''{}",
+        safe_ascii, encoded_utf8
     );
+    let header_value = HeaderValue::from_str(&disposition)
+        .map_err(|_| (StatusCode::INTERNAL_SERVER_ERROR, "Invalid filename header".to_string()))?;
+    response_headers.insert(header::CONTENT_DISPOSITION, header_value);
     Ok((StatusCode::OK, response_headers, body).into_response())
 }
 

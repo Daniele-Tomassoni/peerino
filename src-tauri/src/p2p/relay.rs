@@ -176,8 +176,15 @@ impl RelayManager {
 
     /// Get inbox information
     pub async fn get_inbox(&self, inbox_id: &str) -> Option<Inbox> {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0);
         let inboxes = self.inboxes.lock().await;
-        inboxes.get(inbox_id).cloned()
+        inboxes
+            .get(inbox_id)
+            .filter(|inbox| inbox.expires_at > now)
+            .cloned()
     }
 
     /// Validate an inbox capability for a newly started P2P upload.
