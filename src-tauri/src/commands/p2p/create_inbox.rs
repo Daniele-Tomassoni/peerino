@@ -101,16 +101,9 @@ pub async fn create_inbox(state: State<'_, AppState>) -> Result<String, String> 
         }
     }
 
-    // FIX HIGH: pass the current TURN limit into the link as `&turnMax=`.
-    // The browser uses it for overlimit control instead of the hardcoded
-    // 104857600 value, ensuring browser and backend stay in sync.
-    // Omit turnMax when it equals the receiver's hardcoded default (100 MB).
-    // Keeps inbox links shorter; the receiver already has the same default.
-    const TURN_MAX_DEFAULT: u64 = 104_857_600;
+    // Always pass the current TURN limit so the receiver uses the same value.
     let turn_max = crate::commands::get_turn_max_file_size();
-    if turn_max != TURN_MAX_DEFAULT {
-        link.push_str(&format!("&turnMax={}", turn_max));
-    }
+    link.push_str(&format!("&turnMax={}", turn_max));
 
     // LAN hint: pass the local server address as a parameter.
     // The Netlify page will try to use it as a direct fallback, but if the

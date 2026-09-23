@@ -381,6 +381,19 @@ function escapeHtml(text: string): string {
     return div.innerHTML;
 }
 
+function formatTurnLimitMessage(fileSize: number, maxSize: number): string {
+    const fileMb = (fileSize / 1024 / 1024).toFixed(1);
+    const limitMb = (maxSize / 1024 / 1024).toFixed(0);
+    return `⚠️ File too large for relay\n\n` +
+        `The file is ${fileMb} MB, but the relay limit is ${limitMb} MB per file.\n` +
+        `Your connection requires a relay because the two devices are not ` +
+        `on the same local network.\n\n` +
+        `To send this file:\n` +
+        `• Connect both devices to the same WiFi network\n` +
+        `• Or ask the recipient to connect to your network\n\n` +
+        `Direct transfers on the same network have no size limit.`;
+}
+
 function getErrorMessage(error: unknown): string {
     if (typeof error === 'string') return error;
     if (error instanceof Error) return error.message;
@@ -1247,7 +1260,7 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
 
         // Gate TURN (invariato): rifiuta solo se il file supera il limite.
         if (detectedPath === 'turn') {
-            const errMsg = 'Your connection requires a relay server. To share this file, connect to WiFi.';
+            const errMsg = formatTurnLimitMessage(fileInfo.size, turnMaxSize);
             log('TURN size limit exceeded: ' + errMsg);
             // Telemetry: record the rejection on the backend side.
             invoke('record_turn_rejection_cmd').catch(() => { /* best-effort */ });
@@ -1786,7 +1799,7 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                     detectedPath2 = 'turn';
                 }
                 if (detectedPath2 === 'turn' && msg.size > turnMaxSize2) {
-                    const errMsg = 'Your connection requires a relay server. To share this file, connect to WiFi.';
+                    const errMsg = formatTurnLimitMessage(msg.size, turnMaxSize2);
                     log('TURN size limit exceeded (inbox): ' + errMsg);
                     invoke('record_turn_rejection_cmd').catch(() => { /* best-effort */ });
 

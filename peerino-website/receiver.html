@@ -726,12 +726,9 @@
 
             const isInbox = (mode === 'inbox' || window.location.pathname.startsWith('/inbox/'));
 
-            // FIX HIGH: TURN limit configurable via link (&turnMax=).
-            // Falls back to hardcoded 104857600 (100MB) if absent or invalid.
-            // This ensures browser and backend stay always in sync,
-            // even if the limit is changed via env (TURN_MAX_FILE_SIZE).
+            // TURN limit is supplied by the backend link parameter.
             const turnMaxParam = params.get('turnMax');
-            let TURN_MAX_FILE_SIZE = 104857600; // default 100MB
+            let TURN_MAX_FILE_SIZE = 10485760; // default 10MB
             if (turnMaxParam) {
                 const parsed = parseInt(turnMaxParam, 10);
                 if (!isNaN(parsed) && parsed > 0) {
@@ -1598,11 +1595,21 @@
             }
 
             // ===== LOCALIZATION =====
-            // Do not show technical values (e.g. "1 KB") to the user.
-            // The message must communicate the ACTION, not the cause.
+            function formatTurnLimitMessage(fileSize, maxSize) {
+                const fileMb = (fileSize / 1024 / 1024).toFixed(1);
+                const limitMb = (maxSize / 1024 / 1024).toFixed(0);
+                return `⚠️ File too large for relay\n\n` +
+                    `The file is ${fileMb} MB, but the relay limit is ${limitMb} MB per file.\n` +
+                    `Your connection requires a relay because the two devices are not ` +
+                    `on the same local network.\n\n` +
+                    `To send this file:\n` +
+                    `• Connect both devices to the same WiFi network\n` +
+                    `• Or ask the recipient to connect to your network\n\n` +
+                    `Direct transfers on the same network have no size limit.`;
+            }
+
             function getTurnSizeLimitMessage(msg) {
-                return 'Your network requires a relay server to transfer files.\n\n' +
-                       'To share files, please connect to a WiFi network, or ask the sender to do the same.';
+                return formatTurnLimitMessage(msg.file_size ?? msg.fileSize ?? 0, msg.max_size ?? msg.limit ?? TURN_MAX_FILE_SIZE);
             }
 
             // ===== UPLOAD VIA WEBRTC (Inbox) =====

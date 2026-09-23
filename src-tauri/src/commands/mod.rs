@@ -37,7 +37,7 @@ pub fn get_turn_max_file_size() -> u64 {
         std::env::var("TURN_MAX_FILE_SIZE")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(104_857_600) // 100 MB default. Cloudflare TURN free tier provides 1 TB/month egress.
+            .unwrap_or(10_485_760) // 10 MB default.
                                      // Previously 1024 (1 KB) to protect Metered free tier (500 MB/month).
     })
 }
