@@ -1684,6 +1684,7 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
             }
             if (msg.type === 'upload_file') {
                 // Browser is sending a file (Reverse Inbox)
+                const inboxId = typeof msg.inboxId === 'string' ? msg.inboxId : '';
                 log('📥 Upload request from browser: ' + msg.filename + ' (peerId: ' + maskPeerId(conn.peer) + ')');
                 console.log('Full peerId (debug):', conn.peer);
 
@@ -1813,6 +1814,7 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                     console.log('Full peerId (debug):', conn.peer);
                     await invoke('init_incoming_upload', {
                         peerId: conn.peer,
+                        inboxId,
                         filename: msg.filename,
                         size: msg.size,
                         expectedHash: msg.hash || '',

@@ -180,6 +180,19 @@ impl RelayManager {
         inboxes.get(inbox_id).cloned()
     }
 
+    /// Validate an inbox capability for a newly started P2P upload.
+    pub async fn validate_inbox(&self, inbox_id: &str) -> bool {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0);
+        let inboxes = self.inboxes.lock().await;
+        inboxes
+            .get(inbox_id)
+            .map(|inbox| inbox.expires_at > now)
+            .unwrap_or(false)
+    }
+
     /// Clean up expired links and inboxes
     pub async fn cleanup_expired(&self) {
         let now = SystemTime::now()
@@ -202,5 +215,41 @@ impl RelayManager {
 impl Default for RelayManager {
     fn default() -> Self {
         Self::new(RelayConfig::default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn validate_inbox_accepts_a_current_inbox() {
+        let manager = RelayManager::default();
+        let inbox_id = manager.create_inbox().await.unwrap();
+
+        assert!(manager.validate_inbox(&inbox_id).await);
+    }
+
+    #[tokio::test]
+    async fn validate_inbox_rejects_a_missing_inbox() {
+        let manager = RelayManager::default();
+
+        assert!(!manager.validate_inbox("missing-inbox").await);
+    }
+
+    #[tokio::test]
+    async fn validate_inbox_rejects_an_expired_inbox() {
+        let manager = RelayManager::default();
+        let inbox_id = "expired-inbox".to_string();
+        manager.inboxes.lock().await.insert(
+            inbox_id.clone(),
+            Inbox {
+                id: inbox_id.clone(),
+                created_at: 0,
+                expires_at: 0,
+            },
+        );
+
+        assert!(!manager.validate_inbox(&inbox_id).await);
     }
 }

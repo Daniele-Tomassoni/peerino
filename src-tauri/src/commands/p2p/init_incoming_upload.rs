@@ -27,12 +27,23 @@ use super::upload_state::UploadState;
 pub async fn init_incoming_upload(
     state: State<'_, AppState>,
     peer_id: String,
+    inbox_id: String,
     filename: String,
     size: u64,
     expected_hash: String,
     path: Option<String>,
 ) -> Result<(), String> {
     log::info!("📥 init_incoming_upload: peer_id={}, filename={}, size={}, path={:?}", peer_id, filename, size, path);
+
+    // Authorize the upload against a currently valid inbox. The outer lock
+    // serializes this check with inbox creation/cleanup in the application.
+    let valid_inbox = {
+        let relay = state.relay_manager.lock().await;
+        relay.validate_inbox(&inbox_id).await
+    };
+    if !valid_inbox {
+        return Err("Invalid or expired inbox".to_string());
+    }
 
     // Validate filename to prevent path traversal (S1)
     if !is_safe_filename(&filename) {

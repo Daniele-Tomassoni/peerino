@@ -1696,6 +1696,7 @@
                        const fileHash = await hashPromise;
                        const meta = {
                            type: 'upload_file',
+                           inboxId: inboxId || '',
                            filename: selectedFile.name,
                            size: selectedFile.size,
                            hash: fileHash
