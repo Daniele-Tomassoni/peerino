@@ -34,6 +34,7 @@
 
 use crate::utils::turn_creds::{
     ice_link_config_from_env, ice_link_config_from_env_with_ttl, IceLinkConfig,
+    REGIONAL_STUN_URLS, split_urls,
 };
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use serde::{Deserialize, Serialize};
@@ -408,22 +409,30 @@ pub async fn fetch_ice_servers(ttl_secs: Option<u64>) -> IceResolution {
 pub fn build_browser_ice_servers(resolution: &IceResolution) -> Vec<IceServerEntry> {
     let mut out: Vec<IceServerEntry> = Vec::new();
 
-    // 1) If metered: use the entries returned by the REST API (already ready).
-    if let Some(extra) = &resolution.metered_entries {
-        out.extend(extra.iter().cloned());
-        return out;
-    }
-
-    // 2) Otherwise: STUN from env (or default Google).
-    if !resolution.config.stun_urls.is_empty() {
+    // 1) STUN entry. Use the config's own list if present (coturn/static),
+    // otherwise fall back to the regional list so users behind a blocked
+    // Google/Cloudflare have a reachable STUN server.
+    let stun_urls: Vec<String> = if !resolution.config.stun_urls.is_empty() {
+        resolution.config.stun_urls.clone()
+    } else {
+        split_urls(REGIONAL_STUN_URLS)
+    };
+    if !stun_urls.is_empty() {
         out.push(IceServerEntry {
-            urls: resolution.config.stun_urls.clone(),
+            urls: stun_urls,
             username: None,
             credential: None,
         });
     }
 
-    // 3) TURN (ephemeral coturn): a single entry with urls/username/credential.
+    // 2) Metered/Cloudflare entries (STUN + TURN already paired with
+    // credentials). Append and return.
+    if let Some(extra) = &resolution.metered_entries {
+        out.extend(extra.iter().cloned());
+        return out;
+    }
+
+    // 3) Coturn TURN entry.
     if let Some(turn) = &resolution.config.turn {
         out.push(IceServerEntry {
             urls: turn.urls.clone(),
@@ -454,12 +463,22 @@ pub fn encode_ice_servers_param(entries: &[IceServerEntry]) -> String {
         }
     }
 
-    let compact = serde_json::json!({
-        "u": username,
-        "c": credential,
-        "s": stun_urls,
-        "t": turn_urls,
-    });
+    // Omit empty keys so the payload is compact. The receiver handles
+    // missing keys gracefully (it only reads what it needs).
+    let mut map = serde_json::Map::new();
+    if let Some(u) = username {
+        map.insert("u".into(), u.into());
+    }
+    if let Some(c) = credential {
+        map.insert("c".into(), c.into());
+    }
+    if !stun_urls.is_empty() {
+        map.insert("s".into(), stun_urls.into());
+    }
+    if !turn_urls.is_empty() {
+        map.insert("t".into(), turn_urls.into());
+    }
+    let compact = serde_json::Value::Object(map);
     let json = compact.to_string();
     URL_SAFE_NO_PAD.encode(json.as_bytes())
 }

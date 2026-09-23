@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-09-23
+
+### Fixed
+- Regional STUN servers (China/Russia) were silently dropped when the
+  active TURN provider was Cloudflare, because `build_browser_ice_servers`
+  returned early before appending the default STUN list. Users behind
+  blocked Google/Cloudflare STUN had no reachable fallback.
+- Inbox cancellation was not notified to the browser sender. When the
+  app cancelled an incoming upload, the browser kept showing
+  "Sending file..." with no indication the transfer had stopped. The app
+  now sends `transfer_cancelled` to the browser, which resets the UI and
+  stops the send loop.
+
+### Changed
+- Share links are shorter: `turnMax` is omitted when it equals the
+  receiver's default (100 MB), and empty `ice` fields are no longer
+  serialized.
+
 ## [1.0.3] - 2026-09-22
 
 ### Changed
