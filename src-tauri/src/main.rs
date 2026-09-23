@@ -60,6 +60,7 @@ pub struct AppState {
     pub pending_file_hash: tokio::sync::Mutex<Option<String>>,
     // Incoming uploads state (browser → app)
     pub incoming_uploads: Arc<tokio::sync::Mutex<HashMap<String, commands::p2p::upload_state::UploadState>>>,
+    pub startup_error: Arc<tokio::sync::Mutex<Option<String>>>,
     // FIX B: stream ack map — Arc<Notify> per stream_id for flow control (app → browser)
     pub stream_acks: Arc<tokio::sync::Mutex<HashMap<String, Arc<tokio::sync::Notify>>>>,
     // FIX data integrity: global hash mismatch counter (atomic, no lock).
@@ -155,6 +156,7 @@ fn main() {
                     pending_file_hash: tokio::sync::Mutex::new(None),
                     // Incoming uploads state (browser → app)
                     incoming_uploads: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
+                    startup_error: Arc::new(tokio::sync::Mutex::new(None)),
                     // Telemetria integrità dati
                     hash_mismatch_total: std::sync::Arc::new(
                         std::sync::atomic::AtomicU64::new(0)
@@ -207,6 +209,7 @@ fn main() {
          commands::p2p::append_incoming_chunk::append_incoming_chunk,
          commands::p2p::finalize_incoming_file::finalize_incoming_file,
          commands::p2p::discard_incoming_upload::discard_incoming_upload,
+         commands::startup::get_startup_error,
          // Telemetria integrità dati (P0: contatori hash mismatch / unverified)
          commands::hash_integrity::get_integrity_metrics,
          commands::turn_limits::get_turn_limits,
@@ -236,15 +239,27 @@ fn main() {
             let db = app.state::<AppState>().db.clone();
             let file_index = app.state::<AppState>().file_index.clone();
             
+            let startup_error = app.state::<AppState>().startup_error.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = tokio::fs::create_dir_all(&shared_folder).await {
-                    log::warn!("⚠️ Could not create shared folder: {}", e);
-                }
-                if let Err(e) = tokio::fs::create_dir_all(&temp_folder).await {
-                    log::warn!("⚠️ Could not create temp folder: {}", e);
-                }
-                if let Err(e) = tokio::fs::create_dir_all(&config_folder).await {
-                    log::warn!("⚠️ Could not create config folder: {}", e);
+                for (label, folder) in [("shared", &shared_folder), ("temp", &temp_folder), ("config", &config_folder)] {
+                    if let Err(e) = tokio::fs::create_dir_all(folder).await {
+                        log::error!("❌ Could not create {} folder: {}", label, e);
+                        *startup_error.lock().await = Some(format!(
+                            "Cannot write to {} folder at {}. Check permissions or run as administrator.",
+                            label, folder
+                        ));
+                        continue;
+                    }
+                    let probe = std::path::Path::new(folder).join(".write_probe");
+                    if let Err(e) = tokio::fs::write(&probe, b"probe").await {
+                        log::error!("❌ Data folder not writable: {} ({})", label, e);
+                        *startup_error.lock().await = Some(format!(
+                            "Cannot write to {} folder at {}. Check permissions or run as administrator.",
+                            label, folder
+                        ));
+                    } else {
+                        let _ = tokio::fs::remove_file(&probe).await;
+                    }
                 }
 
                 // Open the database after creating the config folder
@@ -252,8 +267,15 @@ fn main() {
                     let mut db_guard = db.lock().await;
                     // Try to open the persistent database
                     let db_path = format!("{}/files.db", config_folder);
-                    if let Ok(persistent_db) = rusqlite::Connection::open(&db_path) {
-                        *db_guard = persistent_db;
+                    match rusqlite::Connection::open(&db_path) {
+                        Ok(persistent_db) => *db_guard = persistent_db,
+                        Err(e) => {
+                            log::error!("❌ Could not open persistent database at {}: {}", db_path, e);
+                            *startup_error.lock().await = Some(format!(
+                                "Cannot open the file database at {}. Check permissions or run as administrator.",
+                                db_path
+                            ));
+                        }
                     }
 
                     // Imposta WAL mode
@@ -283,6 +305,8 @@ fn main() {
                     }
                     log::info!("📂 Loaded {} files from the persistent index", index.len());
                 }
+                
+                
             });
 
             // Start the temp cleanup task

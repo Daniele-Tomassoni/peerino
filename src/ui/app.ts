@@ -2423,6 +2423,12 @@ listen('upload-progress', (event) => {
     }, 500);
 
 document.addEventListener('DOMContentLoaded', async () => {
+    const startupError = await invoke<string | null>('get_startup_error').catch(() => null);
+    if (startupError) {
+        window.alert(`Peerino cannot start safely:\n\n${startupError}`);
+        return;
+    }
+
     // Initialize empty upload list (container hidden)
     renderUploadProgressList();
     resetDownloadProgress();
