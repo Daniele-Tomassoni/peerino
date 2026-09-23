@@ -20,7 +20,7 @@ use crate::utils::is_safe_filename;
 use axum::{
     body::Body,
     extract::{Path, Query, State},
-    http::{header, StatusCode},
+    http::{header, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
     Json, Router,
@@ -28,10 +28,10 @@ use axum::{
 use chrono;
 use hex;
 use rusqlite::Connection;
+use crate::database::files::FileRepository;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
-use crate::database::files::FileRepository;
 use futures_util::stream::{Stream, StreamExt};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -40,7 +40,7 @@ use std::time::{Duration, Instant};
 use tokio::fs::File;
 use tokio_util::io::ReaderStream;
 use tokio_util::bytes::Bytes;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::CorsLayer;
 use tower_http::timeout::TimeoutLayer;
 use tauri::Emitter;
 
@@ -174,44 +174,6 @@ where
     }
 }
 
-
-/// Handler that lists all available files (for testing and Cloudflare Tunnel)
-/// Always scans the shared-folder to detect new files
-async fn list_files_handler(
-    State(state): State<Arc<HttpServerState>>,
-) -> Result<Response, (StatusCode, String)> {
-    let shared_folder = state.shared_folder.clone();
-    let db = state.db.clone();
-    let file_index = state.file_index.clone();
-    
-    // Load all files from the database (no per-request scan — P1)
-    let repo = FileRepository::new(db);
-    let files = repo.load_all().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e))?;
-    
-    // Update the in-memory index with the complete set
-    {
-        let mut index = file_index.lock().await;
-        index.clear();
-        for file in &files {
-            index.insert(file.hash.clone(), file.clone());
-        }
-    }
-    
-    // Filter files that don't exist on disk
-    let files: Vec<FileInfo> = files
-        .into_iter()
-        .filter(|f| {
-            let file_path = PathBuf::from(&shared_folder).join(&f.filename);
-            file_path.exists()
-        })
-        .collect();
-    
-    // Sort by uploaded_at descending
-    let mut files = files;
-    files.sort_by(|a, b| b.uploaded_at.cmp(&a.uploaded_at));
-    
-    Ok(Json(files).into_response())
-}
 
 /// Handler for file download via public link (relay)
 async fn relay_download_handler(
@@ -539,8 +501,21 @@ async fn inbox_upload_handler(
 
 /// Creates the HTTP server router
 pub fn create_router(state: Arc<HttpServerState>) -> Router {
+    let mut allowed_origins = vec![
+        HeaderValue::from_static("https://peerino.com"),
+        HeaderValue::from_static("http://localhost:3000"),
+    ];
+
+    if let Ok(network_info) = crate::utils::network::get_local_ip() {
+        if let Ok(lan_origin) = format!(
+            "http://{}:{}",
+            network_info.ip, network_info.port
+        ).parse::<HeaderValue>() {
+            allowed_origins.push(lan_origin);
+        }
+    }
+
     Router::new()
-        .route("/files", get(list_files_handler))
         .route("/get/:link_id", get(relay_download_handler))
         .route("/download/:hash", get(download_file_handler))
         .route("/inbox/:inbox_id", get(inbox_page_handler).post(inbox_upload_handler))
@@ -554,7 +529,7 @@ pub fn create_router(state: Arc<HttpServerState>) -> Router {
         // Timeout for slow connections (5 minutes)
         // CORS for access from other devices
         .layer(TimeoutLayer::new(Duration::from_secs(300)))
-        .layer(CorsLayer::new().allow_origin(Any))
+        .layer(CorsLayer::new().allow_origin(allowed_origins))
         .with_state(state)
 }
 
