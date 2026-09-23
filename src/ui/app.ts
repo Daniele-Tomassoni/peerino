@@ -1369,6 +1369,17 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
         let chunksInFlight = 0;
         let streamError: Error | null = null;
 
+        conn.on('close', () => {
+            if (!streamError) {
+                streamError = new Error('Connection closed by peer');
+            }
+        });
+        conn.on('error', (err: any) => {
+            if (!streamError) {
+                streamError = new Error('Connection error: ' + getErrorMessage(err));
+            }
+        });
+
         // FIX: register hash → streamId mapping so the cancel handler
         // (which receives the download hash, not the streamId) can find
         // the active stream and set its cancellation flag.
@@ -1418,7 +1429,13 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
                     });
                 }
 
-                // Invio (identico all'attuale, incluso try/catch):
+                // PeerJS reports a closed connection through an error event and
+                // returns undefined, so the open state must be checked explicitly.
+                if (!conn.open) {
+                    streamError = new Error('Connection closed before send');
+                    return;
+                }
+
                 try {
                     conn.send(chunk);
                 } catch (e) {
@@ -1427,7 +1444,7 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
                     return;
                 }
 
-                // Update progress
+                // Update progress only after the send was accepted.
                 bytesReceived += chunk.length;
                 const elapsedMs = Date.now() - startTime;
                 const speedMbps = elapsedMs > 0 ? (bytesReceived / (1024 * 1024)) / (elapsedMs / 1000) : 0;

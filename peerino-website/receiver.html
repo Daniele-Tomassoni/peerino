@@ -1707,17 +1707,18 @@
 
                    conn.on('close', () => {
                        log('Connection closed');
-                       // FIX: reset cancellation flag so a subsequent
-                       // upload attempt is not blocked by a stale flag.
-                       sendingCancelled = false;
+                       sendingCancelled = true;
+                       if (selectedFile) {
+                           setStatus('❌ Connection closed during upload.', 'error');
+                       }
+                       uploadBtn.disabled = false;
                    });
 
                    conn.on('error', (err) => {
                        console.error('Connection error details:', err);
+                       sendingCancelled = true;
                        setStatus('❌ Connection error. Please retry.', 'error');
                        uploadBtn.disabled = false;
-                       // FIX: reset cancellation flag on connection error
-                       sendingCancelled = false;
                    });
                });
 
@@ -1769,7 +1770,20 @@
                         return;
                     }
 
-                    conn.send(chunk);
+                    if (!conn.open) {
+                        sendingCancelled = true;
+                        setStatus('❌ Connection closed during upload.', 'error');
+                        uploadBtn.disabled = false;
+                        return;
+                    }
+                    try {
+                        conn.send(chunk);
+                    } catch (err) {
+                        sendingCancelled = true;
+                        setStatus('❌ Connection failed during upload.', 'error');
+                        uploadBtn.disabled = false;
+                        return;
+                    }
                     sentChunks++;
                     const progress = Math.round((sentChunks / totalChunks) * 100);
                     setStatus(`📤 Sending... (${progress}%)`, 'loading');
@@ -1779,6 +1793,12 @@
                         readNextChunk();
                     } else {
                         // Send end marker
+                        if (!conn.open) {
+                            sendingCancelled = true;
+                            setStatus('❌ Connection closed during upload.', 'error');
+                            uploadBtn.disabled = false;
+                            return;
+                        }
                         conn.send(JSON.stringify({ type: 'upload_end' }));
                         log('📤 File end sent, waiting for confirmation...');
                     }
