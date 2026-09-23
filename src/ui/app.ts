@@ -2499,6 +2499,32 @@ document.addEventListener('DOMContentLoaded', async () => {
                         }
                     }
 
+                    // FIX: when the cancelled download is actually an incoming
+                    // upload from the browser (inbox), the browser is the SENDER
+                    // and must be notified so its sendFileChunks loop stops.
+                    // The browser (receiver.html) only handles `transfer_cancelled`
+                    // in its upload branch — it does NOT handle `cancel_upload`.
+                    // Without this, the browser keeps showing "Sending file..."
+                    // forever after the app cancels.
+                    if (senderPeer && senderPeer !== 'inbox') {
+                        let conn2 = connections.get(senderPeer);
+                        if (!conn2 && peer && peer.open) {
+                            const conns2: any[] = (peer as any).connections?.[senderPeer] || [];
+                            conn2 = conns2.find((c: any) => c && c.open) || conns2[0];
+                        }
+                        if (conn2 && (conn2 as any).open) {
+                            try {
+                                (conn2 as DataConnection).send(JSON.stringify({
+                                    type: 'transfer_cancelled',
+                                    hash: key
+                                }));
+                                log('Sent transfer_cancelled to browser (inbox cancel): ' + senderPeer);
+                            } catch (e) {
+                                log('⚠️ Failed to send transfer_cancelled (inbox): ' + getErrorMessage(e));
+                            }
+                        }
+                    }
+
                     // FIX: se questo download è in realtà un upload inbox in arrivo,
                     // marca incomingUploads come cancellato per ignorare i chunk residui.
                     // Senza questo, la barra sparisce ma i chunk successivi la ricreano.
