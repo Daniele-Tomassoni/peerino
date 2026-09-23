@@ -15,6 +15,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 use crate::{AppState, FileInfo};
 use crate::database::files::FileRepository;
+use crate::utils::atomic_write;
 use sha2::{Digest, Sha256};
 use std::path::Path;
 use tauri::State;
@@ -55,22 +56,8 @@ pub async fn register_file(
 
     log::info!("Extracted file name: {}", filename);
 
-    // Handle name conflicts
     let shared_folder = state.shared_folder.clone();
-    let mut target_path = Path::new(&shared_folder).join(&filename);
-    let mut counter = 1;
-    while target_path.exists() {
-        let stem = target_path.file_stem().unwrap_or_default().to_str().unwrap_or("file");
-        let ext = target_path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        let new_name = if ext.is_empty() {
-            format!("{}_{}", stem, counter)
-        } else {
-            format!("{}_{}.{}", stem, counter, ext)
-        };
-        target_path = Path::new(&shared_folder).join(new_name);
-        counter += 1;
-    }
-
+    let target_path = Path::new(&shared_folder).join(&filename);
     log::info!("Target path: {:?}", target_path);
 
     // Initial limit check (short lock)
@@ -82,63 +69,27 @@ pub async fn register_file(
         }
     }
 
-    // ✅ Hash + Copy in a single pass
-    let mut hasher = Sha256::new();
-    let mut source_file = File::open(source_path)
-        .await
-        .map_err(|e| {
-            log::error!("Error opening source file: {}", e);
-            e.to_string()
-        })?;
-    let mut target_file = File::create(&target_path)
-        .await
-        .map_err(|e| {
-            log::error!("Error creating target file: {}", e);
-            e.to_string()
-        })?;
-
-    log::info!("Files opened, starting streaming...");
-
-    let mut buffer = vec![0u8; BUFFER_SIZE];
-
-    loop {
-        let bytes_read = source_file
-            .read(&mut buffer)
-            .await
-            .map_err(|e| {
-                log::error!("Error reading file: {}", e);
-                e.to_string()
-            })?;
-
-        if bytes_read == 0 {
-            break;
+    // Write to a same-directory temp file and rename only after completion.
+    let source_path_for_copy = source_path.to_path_buf();
+    let hash_result = std::sync::Arc::new(tokio::sync::Mutex::new(None));
+    let hash_result_for_writer = hash_result.clone();
+    let final_path = atomic_write(&target_path, move |tmp_path| async move {
+        let mut hasher = Sha256::new();
+        let mut source_file = File::open(&source_path_for_copy).await.map_err(|e| e.to_string())?;
+        let mut target_file = File::create(&tmp_path).await.map_err(|e| e.to_string())?;
+        let mut buffer = vec![0u8; BUFFER_SIZE];
+        loop {
+            let bytes_read = source_file.read(&mut buffer).await.map_err(|e| e.to_string())?;
+            if bytes_read == 0 { break; }
+            hasher.update(&buffer[..bytes_read]);
+            target_file.write_all(&buffer[..bytes_read]).await.map_err(|e| e.to_string())?;
         }
-
-        // Update hash
-        hasher.update(&buffer[..bytes_read]);
-
-        // Write to target
-        target_file
-            .write_all(&buffer[..bytes_read])
-            .await
-            .map_err(|e| {
-                log::error!("Error writing file: {}", e);
-                e.to_string()
-            })?;
-    }
-
-    // Flush and close the files
-    target_file
-        .flush()
-        .await
-        .map_err(|e| {
-            log::error!("Error flushing file: {}", e);
-            e.to_string()
-        })?;
-
-    log::info!("Streaming completed, calculating hash...");
-
-    let hash = hex::encode(hasher.finalize());
+        target_file.flush().await.map_err(|e| e.to_string())?;
+        target_file.sync_all().await.map_err(|e| e.to_string())?;
+        *hash_result_for_writer.lock().await = Some(hex::encode(hasher.finalize()));
+        Ok(())
+    }).await?;
+    let hash = hash_result.lock().await.clone().ok_or_else(|| "Missing file hash".to_string())?;
 
     // Use tokio to get metadata asynchronously
     let metadata = tokio::fs::metadata(source_path)
@@ -157,7 +108,7 @@ pub async fn register_file(
         }
 
         let file_info = FileInfo {
-            filename: target_path.file_name().unwrap().to_str().unwrap().to_string(),
+            filename: final_path.file_name().unwrap().to_str().unwrap().to_string(),
             size: metadata.len(),
             hash: hash.clone(),
             uploaded_at: chrono::Utc::now().to_rfc3339(),

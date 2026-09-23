@@ -14,6 +14,41 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 pub mod network;
+
+/// Writes through a same-directory temporary file and renames atomically.
+pub async fn atomic_write<F, Fut>(
+    final_path: &std::path::Path,
+    writer: F,
+) -> Result<std::path::PathBuf, String>
+where
+    F: FnOnce(std::path::PathBuf) -> Fut,
+    Fut: std::future::Future<Output = Result<(), String>>,
+{
+    let parent = final_path.parent().ok_or_else(|| "No parent directory".to_string())?;
+    let tmp = parent.join(format!(".tmp_{}", uuid::Uuid::new_v4()));
+    if let Err(e) = writer(tmp.clone()).await {
+        let _ = tokio::fs::remove_file(&tmp).await;
+        return Err(e);
+    }
+    let mut target = final_path.to_path_buf();
+    let mut counter = 1;
+    loop {
+        match tokio::fs::rename(&tmp, &target).await {
+            Ok(()) => return Ok(target),
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists || target.exists() => {
+                let stem = final_path.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+                let ext = final_path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                let new_name = if ext.is_empty() { format!("{}_{}", stem, counter) } else { format!("{}_{}.{}", stem, counter, ext) };
+                target = parent.join(new_name);
+                counter += 1;
+            }
+            Err(e) => {
+                let _ = tokio::fs::remove_file(&tmp).await;
+                return Err(format!("rename failed: {}", e));
+            }
+        }
+    }
+}
 pub mod temp_cleanup;
 pub mod peer_id;
 pub mod turn_creds;
