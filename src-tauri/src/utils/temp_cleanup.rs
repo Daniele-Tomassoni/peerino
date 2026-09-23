@@ -116,6 +116,29 @@ pub async fn cleanup_shared_folder_tmp(shared_folder: &str) -> Result<()> {
     Ok(())
 }
 
+/// Removes incoming uploads that have not received a chunk for five minutes.
+pub async fn cleanup_abandoned_uploads(
+    uploads: &tokio::sync::Mutex<std::collections::HashMap<String, crate::commands::p2p::upload_state::UploadState>>,
+) {
+    let now = std::time::Instant::now();
+    let mut map = uploads.lock().await;
+    let mut expired = Vec::new();
+    for (peer_id, upload) in map.iter() {
+        let last = *upload.last_chunk_at.lock().await;
+        if now.duration_since(last) > Duration::from_secs(300) {
+            expired.push(peer_id.clone());
+        }
+    }
+
+    for peer_id in expired {
+        if let Some(upload) = map.remove(&peer_id) {
+            drop(upload.file);
+            let _ = fs::remove_file(&upload.temp_path).await;
+            log::info!("Removed abandoned upload for peer: {}", peer_id);
+        }
+    }
+}
+
 /// Starts an async task that cleans temp files:
 /// - Performs an immediate cleanup on startup
 /// - Then cleans every hour

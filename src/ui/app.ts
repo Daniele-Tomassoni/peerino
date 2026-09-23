@@ -1599,7 +1599,15 @@ function handleIncomingConnection(conn: DataConnection): void {
             .catch(console.error);
     });
     
-    conn.on('close', () => {
+    conn.on('close', async () => {
+            const upload = incomingUploads.get(conn.peer);
+            if (upload && !upload.finalized) {
+                try {
+                    await invoke('discard_incoming_upload', { peerId: conn.peer });
+                } catch (e) {
+                    // best-effort cleanup
+                }
+            }
             connections.delete(conn.peer);
             incomingUploads.delete(conn.peer);
             uploadMessageQueues.delete(conn.peer);

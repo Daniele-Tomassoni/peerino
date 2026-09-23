@@ -66,6 +66,9 @@ pub async fn init_incoming_upload(
     upload_state.max_allowed_size = size.saturating_add(1024);
 
     let mut uploads = state.incoming_uploads.lock().await;
+    if uploads.contains_key(&peer_id) {
+        return Err(format!("Upload already in progress for peer {}", peer_id));
+    }
     uploads.insert(peer_id.clone(), upload_state);
     log::info!("✅ Upload state initialized for peer_id={}", peer_id);
     Ok(())

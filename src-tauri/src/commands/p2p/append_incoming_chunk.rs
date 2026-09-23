@@ -45,6 +45,7 @@ pub async fn append_incoming_chunk(
         .map_err(|e| format!("Error writing chunk: {}", e))?;
     upload.hasher.update(&chunk);
     upload.written = new_total;
+    *upload.last_chunk_at.lock().await = std::time::Instant::now();
     log::info!("✅ Chunk written, total_written={}", upload.written);
 
     Ok(())

@@ -316,6 +316,14 @@ fn main() {
             tauri::async_runtime::spawn(async move {
                 utils::temp_cleanup::start_cleanup_task(&temp_path, &shared_folder).await;
             });
+
+            let incoming_uploads = app.state::<AppState>().incoming_uploads.clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
+                    utils::temp_cleanup::cleanup_abandoned_uploads(&incoming_uploads).await;
+                }
+            });
             
             // Start the automatic relay cleanup task (expired links and inboxes)
             let relay_manager = app.state::<AppState>().relay_manager.clone();
