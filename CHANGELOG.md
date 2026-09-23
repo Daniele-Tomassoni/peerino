@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-09-23
+
+### Fixed
+- Abandoned P2P uploads are now cleaned up on connection close and
+  after 5 minutes of inactivity. Previously, interrupted uploads left
+  orphan temp files and file handles. (C-05)
+- File writes are now atomic (temp file + rename). Partial files are
+  removed on I/O error, and concurrent writes with the same filename
+  no longer overwrite each other. (C-06)
+- The file index now recalculates hashes when a file's size changes,
+  removes records of files deleted from disk, and never caches stale
+  entries. (C-07)
+- Startup now surfaces an explicit error when the data folders
+  (shared-folder, temp, config) are not writable, instead of silently
+  falling back to in-memory storage. (C-08)
+- Unicode filenames no longer panic the HTTP server when building the
+  Content-Disposition header. RFC 5987 `filename*` is used for
+  non-ASCII names. (C-13)
+- Expired inboxes are rejected immediately by `get_inbox`, instead of
+  remaining valid until the next hourly cleanup. (C-14)
+- The LAN receiver no longer buffers the entire file in JavaScript
+  memory. LAN downloads now use the browser's native streaming via
+  redirect. (C-15)
+- PeerJS and js-sha256 are now self-hosted instead of loaded from
+  unpkg, removing a runtime CDN dependency. (C-19)
+
 ## [1.0.5] - 2026-09-23
 
 ### Security
