@@ -1000,7 +1000,9 @@
                     log('📥 Fetching file from local server: ' + downloadUrl);
                     try {
                         setPhase('lan', 'done');
+                        setStatus(`✅ Downloading "${filenameParam || 'file'}". Check your browser downloads.`, 'success');
                         log('🟢 Starting native LAN download: ' + downloadUrl);
+                        progressContainer.classList.remove('visible');
                         window.location.href = downloadUrl;
                         return;
                     } catch (fetchErr) {
