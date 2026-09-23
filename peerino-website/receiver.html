@@ -999,26 +999,9 @@
                     const downloadUrl = lanBase + '/download/' + encodeURIComponent(fileHash || '');
                     log('📥 Fetching file from local server: ' + downloadUrl);
                     try {
-                        const controller = new AbortController();
-                        const fetchTimeout = setTimeout(() => controller.abort(), 1500);
-                        const response = await fetch(downloadUrl, { signal: controller.signal });
-                        clearTimeout(fetchTimeout);
-                        if (!response.ok) {
-                            throw new Error('HTTP ' + response.status);
-                        }
                         setPhase('lan', 'done');
-                        const blob = await response.blob();
-                        const url = URL.createObjectURL(blob);
-                        const a = document.createElement('a');
-                        a.href = url;
-                        a.download = filenameParam || 'file.bin';
-                        document.body.appendChild(a);
-                        a.click();
-                        document.body.removeChild(a);
-                        setTimeout(() => URL.revokeObjectURL(url), 5000);
-                        setStatus('✅ Download completed!', 'success');
-                        log('✅ File downloaded via LAN HTTP');
-                        showPeerinoCta('download');
+                        log('🟢 Starting native LAN download: ' + downloadUrl);
+                        window.location.href = downloadUrl;
                         return;
                     } catch (fetchErr) {
                         log('⚠️ LAN fetch failed, falling back to WebRTC: ' + fetchErr.message);
