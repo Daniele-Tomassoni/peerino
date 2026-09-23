@@ -284,6 +284,20 @@ async fn receiver_page_handler() -> Response {
     (StatusCode::OK, headers, html).into_response()
 }
 
+async fn serve_peerjs_js() -> Response {
+    (
+        [(header::CONTENT_TYPE, "application/javascript; charset=utf-8")],
+        include_str!("../../../peerino-website/assets/vendor/peerjs.min.js"),
+    ).into_response()
+}
+
+async fn serve_sha256_js() -> Response {
+    (
+        [(header::CONTENT_TYPE, "application/javascript; charset=utf-8")],
+        include_str!("../../../peerino-website/assets/vendor/sha256.min.js"),
+    ).into_response()
+}
+
 /// Handler for receiving a file uploaded to the Reverse Delivery Box (Local)
 /// Body streaming avoids loading the entire file into memory (project rule: no Vec<u8>).
 async fn inbox_upload_handler(
@@ -561,6 +575,8 @@ pub fn create_router(state: Arc<HttpServerState>) -> Router {
     }
 
     Router::new()
+        .route("/assets/vendor/peerjs.min.js", get(serve_peerjs_js))
+        .route("/assets/vendor/sha256.min.js", get(serve_sha256_js))
         .route("/get/:link_id", get(relay_download_handler))
         .route("/download/:hash", get(download_file_handler))
         .route("/inbox/:inbox_id", get(inbox_page_handler).post(inbox_upload_handler))
