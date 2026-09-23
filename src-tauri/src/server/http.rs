@@ -331,7 +331,19 @@ async fn inbox_upload_handler(
         counter += 1;
     }
 
-    // Stream the body to the file with real-time SHA-256 computation
+    // Enforce the dedicated HTTP upload limit before creating the destination file.
+    let max_allowed = crate::commands::get_http_upload_max_size();
+    let total_expected = headers
+        .get(header::CONTENT_LENGTH)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|s| s.parse::<u64>().ok());
+    if let Some(content_length) = total_expected {
+        if content_length > max_allowed {
+            return Err((StatusCode::PAYLOAD_TOO_LARGE, "File too large".to_string()));
+        }
+    }
+
+    // Stream the body to the file with real-time SHA-256 computation.
     let mut target_file = File::create(&target_path).await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let mut stream = body.into_data_stream();
@@ -345,11 +357,7 @@ async fn inbox_upload_handler(
 
     // Content-Length sent by the browser (XHR with File): allows showing
     // a real percentage instead of indeterminate progress.
-    let total_expected: u64 = headers
-        .get(header::CONTENT_LENGTH)
-        .and_then(|v| v.to_str().ok())
-        .and_then(|s| s.parse::<u64>().ok())
-        .unwrap_or(0);
+    let total_expected = total_expected.unwrap_or(0);
 
     // Register cancellation flag for this inbox download
     let cancelled_flag = state.download_tracker.register_cancellation_flag(&download_hash).await;
@@ -364,10 +372,16 @@ async fn inbox_upload_handler(
         }
 
         let chunk = chunk.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        let new_total = total_size.saturating_add(chunk.len() as u64);
+        if new_total > max_allowed {
+            drop(target_file);
+            let _ = tokio::fs::remove_file(&target_path).await;
+            return Err((StatusCode::PAYLOAD_TOO_LARGE, "File too large".to_string()));
+        }
         hasher.update(&chunk);
         target_file.write_all(&chunk).await
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-        total_size += chunk.len() as u64;
+        total_size = new_total;
 
         // Update download tracker (app is receiving file via inbox)
         let elapsed_secs = start_time.elapsed().as_secs_f64();

@@ -45,3 +45,14 @@ pub fn get_turn_max_file_size() -> u64 {
 pub fn get_turn_max_file_size_buffer() -> u64 {
     get_turn_max_file_size() + (get_turn_max_file_size() / 10) // 110 MB (+10%)
 }
+
+// HTTP inbox uploads are independent from TURN relay limits.
+pub fn get_http_upload_max_size() -> u64 {
+    static CACHE: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+    *CACHE.get_or_init(|| {
+        std::env::var("HTTP_UPLOAD_MAX_SIZE")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1_073_741_824) // 1 GB default
+    })
+}

@@ -34,6 +34,16 @@ pub async fn finalize_incoming_file(
     let upload = uploads.remove(&peer_id)
         .ok_or_else(|| format!("Upload not found for peer_id={}", peer_id))?;
 
+    // Reject incomplete uploads before any integrity or persistence operation.
+    if upload.written != upload.declared_size {
+        drop(upload.file);
+        let _ = tokio::fs::remove_file(&upload.temp_path).await;
+        return Err(format!(
+            "Size mismatch: wrote {} but declared {}",
+            upload.written, upload.declared_size
+        ));
+    }
+
     // Calculate actual hash
     let actual_hash = hex::encode(upload.hasher.finalize());
 

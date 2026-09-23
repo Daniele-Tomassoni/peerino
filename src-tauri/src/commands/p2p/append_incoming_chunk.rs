@@ -32,10 +32,19 @@ pub async fn append_incoming_chunk(
     let upload = uploads.get_mut(&peer_id)
         .ok_or_else(|| format!("Upload not initialized for peer_id={}", peer_id))?;
 
+    let chunk_size = chunk.len() as u64;
+    let new_total = upload.written.saturating_add(chunk_size);
+    if new_total > upload.max_allowed_size {
+        return Err(format!(
+            "Chunk exceeds allowed size: {} > {}",
+            new_total, upload.max_allowed_size
+        ));
+    }
+
     upload.file.write_all(&chunk).await
         .map_err(|e| format!("Error writing chunk: {}", e))?;
     upload.hasher.update(&chunk);
-    upload.written += chunk.len() as u64;
+    upload.written = new_total;
     log::info!("✅ Chunk written, total_written={}", upload.written);
 
     Ok(())

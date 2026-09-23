@@ -59,9 +59,11 @@ pub async fn init_incoming_upload(
         return Err(format!("TURN_SIZE_LIMIT|{}|{}", get_turn_max_file_size(), size));
     }
 
-    let upload_state = UploadState::new(&state.temp_folder, filename, expected_hash)
+    let mut upload_state = UploadState::new(&state.temp_folder, filename, expected_hash)
         .await
         .map_err(|e| e.to_string())?;
+    upload_state.declared_size = size;
+    upload_state.max_allowed_size = size.saturating_add(1024);
 
     let mut uploads = state.incoming_uploads.lock().await;
     uploads.insert(peer_id.clone(), upload_state);
