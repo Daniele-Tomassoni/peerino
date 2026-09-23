@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-09-23
+
+### Security
+- Require a valid, non-expired inbox_id for P2P uploads. Previously,
+  anyone with a PeerID from any shared link could push files into the
+  shared folder without the inbox link. (C-01)
+- Remove the public `/files` HTTP endpoint. The endpoint exposed name,
+  size, and hash of every shared file to any device on the local
+  network. The server now uses a strict CORS allow-list. (C-03)
+- Reject drive-relative and Windows device filenames (e.g. `C:evil.txt`,
+  `CON`, `LPT1`) in uploaded files. Previously such names could escape
+  the shared folder on Windows. (C-02)
+- Enforce byte limits on incoming transfers: HTTP uploads are capped at
+  1 GB (configurable via `HTTP_UPLOAD_MAX_SIZE`), P2P uploads are capped
+  at the declared size plus 1 KB. Finalization now rejects size
+  mismatches. (C-04)
+- Check `conn.open` before sending chunks and abort on connection
+  close/error. Previously the sender could report "File sent" even when
+  the channel was already closed. (C-12)
+
+### Changed
+- Remove regional STUN servers (miwifi, bilibili, yandex). They provided
+  no practical benefit: Cloudflare TURN is throttled in Russia and
+  unreliable in China, so relayed transfers don't work there anyway.
+  Share links are ~80 characters shorter.
+- Reduce the TURN relay per-file limit from 100 MB to 10 MB, with a
+  clearer user message showing the file size, the limit, the reason,
+  and concrete steps to fix (connect both devices to the same network).
+- Always include `turnMax` in share links. The v1.0.4 optimization of
+  omitting it when equal to the default is removed, to avoid drift
+  between app and browser defaults.
+
 ## [1.0.4] - 2026-09-23
 
 ### Fixed

@@ -1,6 +1,6 @@
 [package]
 name = "Peerino"
-version = "1.0.4"
+version = "1.0.5"
 authors = ["Daniele Tomassoni"]
 edition = "2021"
 license = "AGPL-3.0-or-later"
