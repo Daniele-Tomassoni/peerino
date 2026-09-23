@@ -315,21 +315,17 @@ async fn inbox_upload_handler(
         .cloned()
         .unwrap_or_else(|| format!("inbox-{}", inbox_id));
 
-    // Handle name conflicts in the shared-folder
+    // Write to a same-directory temp file; final conflicts are resolved at rename time.
     let shared_folder = state.shared_folder.clone();
-    let mut target_path = PathBuf::from(&shared_folder).join(&filename);
-    let mut counter = 1;
-    while target_path.exists() {
-        let stem = target_path.file_stem().unwrap_or_default().to_str().unwrap_or("file");
-        let ext = target_path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        let new_name = if ext.is_empty() {
-            format!("{}_{}", stem, counter)
-        } else {
-            format!("{}_{}.{}", stem, counter, ext)
-        };
-        target_path = PathBuf::from(&shared_folder).join(new_name);
-        counter += 1;
-    }
+    let shared_folder_path = PathBuf::from(&shared_folder);
+    let final_path = shared_folder_path.join(&filename);
+    let uuid = format!("{}_{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0),
+        std::process::id());
+    let tmp_path = shared_folder_path.join(format!(".tmp_{}", uuid));
 
     // Enforce the dedicated HTTP upload limit before creating the destination file.
     let max_allowed = crate::commands::get_http_upload_max_size();
@@ -343,8 +339,8 @@ async fn inbox_upload_handler(
         }
     }
 
-    // Stream the body to the file with real-time SHA-256 computation.
-    let mut target_file = File::create(&target_path).await
+    // Stream the body to a temp file with real-time SHA-256 computation.
+    let mut target_file = File::create(&tmp_path).await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let mut stream = body.into_data_stream();
     let mut hasher = Sha256::new();
@@ -375,7 +371,7 @@ async fn inbox_upload_handler(
         let new_total = total_size.saturating_add(chunk.len() as u64);
         if new_total > max_allowed {
             drop(target_file);
-            let _ = tokio::fs::remove_file(&target_path).await;
+            let _ = tokio::fs::remove_file(&tmp_path).await;
             return Err((StatusCode::PAYLOAD_TOO_LARGE, "File too large".to_string()));
         }
         hasher.update(&chunk);
@@ -420,19 +416,48 @@ async fn inbox_upload_handler(
         }
     }
 
-    // If cancelled, clean up partial file and remove from tracker
+    // If cancelled, clean up the temp file and remove from tracker
     if cancelled {
         let _ = target_file.flush().await;
-        let _ = tokio::fs::remove_file(&target_path).await;
+        let _ = tokio::fs::remove_file(&tmp_path).await;
         let _ = state.download_tracker.remove_download(&download_hash).await;
         return Err((StatusCode::REQUEST_TIMEOUT, "Download cancelled".to_string()));
     }
 
-    target_file.flush().await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    target_file.flush().await.map_err(|e| {
+        let _ = std::fs::remove_file(&tmp_path);
+        (StatusCode::INTERNAL_SERVER_ERROR, format!("flush: {}", e))
+    })?;
+    target_file.sync_all().await.map_err(|e| {
+        let _ = std::fs::remove_file(&tmp_path);
+        (StatusCode::INTERNAL_SERVER_ERROR, format!("sync: {}", e))
+    })?;
 
     let hash = hex::encode(hasher.finalize());
-    let final_filename = target_path.file_name().unwrap().to_str().unwrap().to_string();
+    let mut final_target = final_path.clone();
+    let mut counter = 1;
+    drop(target_file);
+    loop {
+        match tokio::fs::rename(&tmp_path, &final_target).await {
+            Ok(()) => break,
+            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
+                let stem = final_path.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+                let ext = final_path.extension().and_then(|s| s.to_str()).unwrap_or("");
+                let new_name = if ext.is_empty() {
+                    format!("{}_{}", stem, counter)
+                } else {
+                    format!("{}_{}.{}", stem, counter, ext)
+                };
+                final_target = shared_folder_path.join(new_name);
+                counter += 1;
+            }
+            Err(e) => {
+                let _ = tokio::fs::remove_file(&tmp_path).await;
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("rename: {}", e)));
+            }
+        }
+    }
+    let final_filename = final_target.file_name().unwrap().to_str().unwrap().to_string();
 
     // FIX P0: verify hash integrity for inbox HTTP uploads.
     // The browser computes SHA-256 before sending and passes it as ?hash=...
@@ -444,8 +469,7 @@ async fn inbox_upload_handler(
             "❌ HASH MISMATCH (inbox HTTP): expected={}, actual={}. File NOT saved.",
             file_hash, hash
         );
-        drop(target_file);
-        if let Err(e) = tokio::fs::remove_file(&target_path).await {
+        if let Err(e) = tokio::fs::remove_file(&final_target).await {
             log::warn!("Unable to delete inbox file after hash mismatch: {}", e);
         }
         return Err((StatusCode::BAD_REQUEST, format!(
