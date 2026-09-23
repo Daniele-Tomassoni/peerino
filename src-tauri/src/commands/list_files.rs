@@ -34,16 +34,7 @@ pub async fn list_files(state: State<'_, AppState>) -> Result<Vec<FileInfo>, Str
     let repo = FileRepository::new(db);
     let files = repo.load_all().await?;
 
-    // Update the in-memory index with the complete set
-    {
-        let mut index = file_index.lock().await;
-        index.clear();
-        for file in &files {
-            index.insert(file.hash.clone(), file.clone());
-        }
-    }
-
-    // Filter files that don't exist on disk
+    // Filter before rebuilding the in-memory index.
     let files: Vec<FileInfo> = files
         .into_iter()
         .filter(|f| {
@@ -51,6 +42,14 @@ pub async fn list_files(state: State<'_, AppState>) -> Result<Vec<FileInfo>, Str
             file_path.exists()
         })
         .collect();
+
+    {
+        let mut index = file_index.lock().await;
+        index.clear();
+        for file in &files {
+            index.insert(file.hash.clone(), file.clone());
+        }
+    }
 
     // Sort by uploaded_at descending
     let mut files = files;

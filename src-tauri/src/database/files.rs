@@ -173,23 +173,23 @@ impl FileRepository {
         tokio::task::spawn_blocking(move || {
             let db = conn.blocking_lock();
 
-            // Read all existing file names from the database
-            let existing_filenames: std::collections::HashSet<String> = {
+            // Read filename -> (hash, size) metadata from the database.
+            let existing: std::collections::HashMap<String, (String, u64)> = {
                 let mut stmt = db
-                    .prepare("SELECT filename FROM files")
+                    .prepare("SELECT filename, hash, size FROM files")
                     .map_err(|e| e.to_string())?;
-                let filenames: std::collections::HashSet<String> = stmt
-                    .query_map([], |row| {
-                        Ok(row.get::<_, String>(0)?)
-                    })
+                let metadata = stmt
+                    .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, u64>(2)?)))
                     .map_err(|e| e.to_string())?
                     .filter_map(|r| r.ok())
+                    .map(|(filename, hash, size)| (filename, (hash, size)))
                     .collect();
-                filenames
+                metadata
             };
 
             // Scan the folder
             let mut added = 0;
+            let mut disk_filenames = std::collections::HashSet::new();
             if let Ok(entries) = std::fs::read_dir(&shared_folder) {
                 for entry in entries.flatten() {
                     let path = entry.path();
@@ -203,10 +203,15 @@ impl FileRepository {
                         if filename.starts_with('.') {
                             continue;
                         }
-
-                        // If the file is already in the database, skip hash computation
-                        if existing_filenames.contains(&filename) {
-                            continue;
+                        disk_filenames.insert(filename.clone());
+                        let metadata = match std::fs::metadata(&path) {
+                            Ok(metadata) => metadata,
+                            Err(_) => continue,
+                        };
+                        if let Some((_, db_size)) = existing.get(&filename) {
+                            if *db_size == metadata.len() {
+                                continue;
+                            }
                         }
 
                         // Compute SHA-256 only for new files
@@ -227,17 +232,26 @@ impl FileRepository {
                             hex::encode(hasher.finalize())
                         };
 
-                        // Add to database
-                        if let Ok(metadata) = std::fs::metadata(&path) {
-                            let uploaded_at = chrono::Utc::now().to_rfc3339();
-                            db.execute(
-                                "INSERT OR REPLACE INTO files (hash, filename, size, uploaded_at) VALUES (?1, ?2, ?3, ?4)",
-                                params![hash, filename, metadata.len(), uploaded_at],
-                            )
-                            .map_err(|e| e.to_string())?;
-                            added += 1;
-                        }
+                        // Add or refresh the database record.
+                        let uploaded_at = chrono::Utc::now().to_rfc3339();
+                        db.execute(
+                            "INSERT OR REPLACE INTO files (hash, filename, size, uploaded_at) VALUES (?1, ?2, ?3, ?4)",
+                            params![hash, filename, metadata.len(), uploaded_at],
+                        )
+                        .map_err(|e| e.to_string())?;
+                        added += 1;
                     }
+                }
+            }
+
+            // Remove database records whose files no longer exist.
+            let mut stmt = db.prepare("SELECT filename FROM files").map_err(|e| e.to_string())?;
+            let db_filenames: Vec<String> = stmt.query_map([], |row| row.get::<_, String>(0))
+                .map_err(|e| e.to_string())?.filter_map(|r| r.ok()).collect();
+            for filename in db_filenames {
+                if !disk_filenames.contains(&filename) {
+                    db.execute("DELETE FROM files WHERE filename = ?1", [&filename])
+                        .map_err(|e| e.to_string())?;
                 }
             }
 
