@@ -23,8 +23,7 @@
 // - turnUrls/turnUser/turnPass : EPHEMERAL credentials derived via HMAC-SHA1 from
 //   TURN_AUTH_SECRET (coturn REST scheme). The secret never travels in links and
 //   credentials expire after TURN_CRED_TTL_SECS.
-// - lan=      : address of the integrated HTTP server (only if it is running), so the
-//   receiver page can offer a direct-LAN fallback when WebRTC is unavailable.
+// - The receiver can still be opened manually from the local HTTP server.
 //
 // Manual overrides (signaling_url / turn_username / turn_password) are still accepted
 // for backward compatibility and take precedence ONLY when env TURN is not configured.
@@ -32,7 +31,6 @@
 use tauri::State;
 use crate::AppState;
 use crate::utils::ice_provider::{self, IceResolution};
-use crate::utils::network::get_local_ip;
 use urlencoding::encode;
 
 /// Generate a unique P2P-to-Web link that includes the PeerID, hash and filename of the sender.
@@ -73,7 +71,6 @@ pub async fn generate_web_link(
 
     // 4. Determine the base URL of the receiver page.
     // Uses P2P_WEB_URL (env) as the base URL: reachable from the internet.
-    // The LAN fallback is attempted via the 'lan=' parameter added below.
     let page_base = std::env::var("P2P_WEB_URL")
         .map(|u| u.trim_end_matches('/').to_string())
         .unwrap_or_else(|_| {
@@ -167,12 +164,6 @@ pub async fn generate_web_link(
     // LAN hint: pass the local server address as a parameter.
     // The Netlify page will try to use it as a direct fallback, but if the
     // browser blocks due to mixed content, it will automatically fall back to
-    // WebRTC with STUN → TURN. The parameter does not break the flow.
-    if *state.server_running.lock().await {
-        if let Ok(info) = get_local_ip() {
-            link.push_str(&format!("&lan=http://{}:{}", info.ip, info.port));
-        }
-    }
 
     log::info!("🔗 Generated P2P-to-Web link: {}", link);
 

@@ -27,7 +27,6 @@
 use tauri::State;
 use crate::AppState;
 use crate::utils::ice_provider::{self, IceResolution};
-use crate::utils::network::get_local_ip;
 use urlencoding::encode;
 
 /// Inbox validity in seconds (must match RelayConfig::link_expiry_seconds).
@@ -49,11 +48,6 @@ pub async fn create_inbox(state: State<'_, AppState>) -> Result<String, String> 
     };
 
     // Use P2P_WEB_URL (env) as the base URL: reachable from the internet.
-    // The LAN fallback is attempted via the 'lan=' parameter added below:
-    // - If sender and receiver are on the same network, the browser will try
-    //   fetching the local server but it may be blocked by mixed content
-    //   (HTTPS page calling HTTP). In that case, it automatically falls back to WebRTC.
-    // - The 'lan=' parameter does not break anything: it is just an optimistic attempt.
     let page_base = std::env::var("P2P_WEB_URL")
         .map(|u| u.trim_end_matches('/').to_string())
         .unwrap_or_else(|_| {
@@ -105,15 +99,6 @@ pub async fn create_inbox(state: State<'_, AppState>) -> Result<String, String> 
     let turn_max = crate::commands::get_turn_max_file_size();
     link.push_str(&format!("&turnMax={}", turn_max));
 
-    // LAN hint: pass the local server address as a parameter.
-    // The Netlify page will try to use it as a direct fallback, but if the
-    // browser blocks due to mixed content, it will automatically fall back to
-    // WebRTC with STUN → TURN. The parameter does not break the flow.
-    if *state.server_running.lock().await {
-        if let Ok(info) = get_local_ip() {
-            link.push_str(&format!("&lan=http://{}:{}", info.ip, info.port));
-        }
-    }
 
     log::info!("📥 Created reverse inbox link: {}", link);
 
