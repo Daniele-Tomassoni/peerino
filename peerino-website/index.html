@@ -420,6 +420,18 @@
                 gap: 48px;
             }
         }
+        .limit-note {
+            max-width: 720px;
+            margin: 32px auto 0;
+            padding: 14px 18px;
+            font-size: 0.85rem;
+            line-height: 1.5;
+            color: var(--text-dim, #666);
+            background: rgba(56, 189, 248, 0.06);
+            border: 1px solid rgba(56, 189, 248, 0.15);
+            border-radius: 8px;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -456,6 +468,11 @@
                 <p>On the same network, transfers stay local. No internet, no relay, maximum speed.</p>
             </div>
         </div>
+
+        <p class="limit-note">
+            Direct transfers have no size limit. Relay transfers are capped at 10 MB per file
+            to keep the shared relay budget available for everyone.
+        </p>
 
         <section class="how-it-works">
             <h2>How it works</h2>
