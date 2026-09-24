@@ -382,18 +382,10 @@ function escapeHtml(text: string): string {
     return div.innerHTML;
 }
 
-function formatTurnLimitMessage(fileSize: number, maxSize: number): string {
-    const fileMb = (fileSize / 1024 / 1024).toFixed(1);
-    const limitMb = (maxSize / 1024 / 1024).toFixed(0);
-    return `⚠️ File too large for the relay\n\n` +
-        `This file is ${fileMb} MB, but the relay supports at most ${limitMb} MB per file.\n\n` +
-        `The relay is only used when a direct connection between the two devices is not possible. Right now it's the only available path.\n\n` +
-        `What you can do:\n` +
-        `• Retry in a few seconds (a direct connection sometimes succeeds on a second attempt)\n` +
-        `• If possible, connect both devices to the same local network\n` +
-        `• Try from a different network (e.g. switch from 4G to WiFi)\n` +
-        `• Or send a smaller file\n\n` +
-        `Direct transfers have no size limit.`;
+function formatTurnLimitMessage(_fileSize: number, _maxSize: number): string {
+    return `⚠️ Direct connection not possible\n\n` +
+        `This network requires a relay, and Peerino doesn't transfer files\n` +
+        `via relay. Try from a different network (e.g. mobile hotspot).`;
 }
 
 function getErrorMessage(error: unknown): string {
