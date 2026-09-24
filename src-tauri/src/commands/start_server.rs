@@ -37,6 +37,7 @@ pub async fn start_http_server(
     }
 
     let shared_folder = state.shared_folder.clone();
+    let server_running = state.server_running.clone();
     // Share the Arc, do not clone
     let file_index = state.file_index.clone();
     // Share the download tracker
@@ -66,11 +67,15 @@ pub async fn start_http_server(
         app_handle: Some(app_handle),
     });
 
-    // Bind the TCP listener BEFORE spawning so bind errors are returned synchronously
-    let addr = format!("0.0.0.0:{}", DEFAULT_HTTP_PORT);
+    // Bind the TCP listener BEFORE spawning so bind errors are returned synchronously.
+    let port: u16 = std::env::var("HTTP_PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(DEFAULT_HTTP_PORT);
+    let addr = format!("0.0.0.0:{}", port);
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
-        .map_err(|e| format!("Failed to bind to port {}: {}", DEFAULT_HTTP_PORT, e))?;
+        .map_err(|e| format!("Failed to bind to port {}: {}", port, e))?;
 
     // Create shutdown channels
     let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel::<()>();
@@ -83,14 +88,16 @@ pub async fn start_http_server(
 
     // Start the server in a separate task
     let handle = tauri::async_runtime::spawn(async move {
-        log::info!("HTTP server started on port {}...", DEFAULT_HTTP_PORT);
+        log::info!("HTTP server started on port {}...", port);
 
         // Use select! to handle both execution and shutdown
         tokio::select! {
             result = crate::server::http::start_server(server_state, listener) => {
                 if let Err(e) = result {
+                    *server_running.lock().await = false;
                     log::error!("Critical HTTP server error: {}", e);
                 } else {
+                    *server_running.lock().await = false;
                     log::info!("HTTP server terminated cleanly");
                 }
             }
@@ -112,7 +119,7 @@ pub async fn start_http_server(
         *running = true;
     }
 
-    Ok(format!("🌐 HTTP server started on port {}", DEFAULT_HTTP_PORT))
+    Ok(format!("🌐 HTTP server started on port {}", port))
 }
 
 /// Stops the HTTP server (if running)
@@ -127,12 +134,21 @@ pub async fn stop_http_server(state: State<'_, AppState>) -> Result<String, Stri
         }
     }
 
-    // Send the shutdown signal
+    // Send the shutdown signal.
     {
         let tx = state.server_shutdown_tx.lock().await.take();
         if let Some(tx) = tx {
             let _ = tx.send(());
         }
+    }
+
+    // Await the server task with a bounded timeout.
+    let handle = state.server_handle.lock().await.take();
+    if let Some(handle) = handle {
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            handle,
+        ).await;
     }
 
     // Update state
