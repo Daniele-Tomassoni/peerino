@@ -573,7 +573,7 @@
 
         <!-- TURN bandwidth warning -->
         <div id="turn-warning" class="turn-warning" style="display:none; background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.3); border-radius: var(--radius-sm); padding: 12px; margin-top: 10px; color: var(--yellow); font-size: 0.85rem; text-align: center; font-weight: 500;">
-            ⚠️ This transfer uses a relay server. It may be slower and count double against your bandwidth.
+            ⚠️ Direct connection not possible on this network. Peerino doesn't transfer files via relay. Try from a different network (e.g. mobile hotspot).
         </div>
 
         <!-- DOWNLOAD UI -->
@@ -907,9 +907,9 @@
                             // Log PRIMA di qualsiasi chiamata UI: se una di queste fallisce,
                             // vogliamo comunque vedere che il path era TURN.
                             if (effectiveSize > TURN_MAX_FILE_SIZE) {
-                                log('🔴 Selected path: TURN relay, file exceeds ' + (TURN_MAX_FILE_SIZE / 1048576) + 'MB limit');
+                                log('🔴 Selected path: TURN diagnostic: direct connection not possible. Try from a different network.');
                             } else {
-                                log('🟡 Selected path: TURN relay, file within ' + (TURN_MAX_FILE_SIZE / 1048576) + 'MB limit');
+                                log('🟡 Selected path: TURN diagnostic: direct connection not possible. Try from a different network.');
                             }
                             showTurnWarning();
                             setPhase('stun', 'fail');
@@ -1159,7 +1159,7 @@
                     connectTimeout = setTimeout(() => {
                         if (connection && !connection.open) {
                             log('❌ Connection timeout (30s): WebRTC channel did not open');
-                            setStatus('❌ Connection timeout. Check network/NAT or TURN server.', 'error');
+                            setStatus('❌ Direct connection not possible on this network. Try from a different network (e.g. mobile hotspot).', 'error');
                             downloadBtn.classList.remove('show');
                         }
                     }, 30000);
@@ -1585,17 +1585,8 @@
 
             // ===== LOCALIZATION =====
             function formatTurnLimitMessage(fileSize, maxSize) {
-                const fileMb = (fileSize / 1024 / 1024).toFixed(1);
-                const limitMb = (maxSize / 1024 / 1024).toFixed(0);
-                return `⚠️ File too large for the relay\n\n` +
-                    `This file is ${fileMb} MB, but the relay supports at most ${limitMb} MB per file.\n\n` +
-                    `The relay is only used when a direct connection between the two devices is not possible. Right now it's the only available path.\n\n` +
-                    `What you can do:\n` +
-                    `• Retry in a few seconds (a direct connection sometimes succeeds on a second attempt)\n` +
-                    `• If possible, connect both devices to the same local network\n` +
-                    `• Try from a different network (e.g. switch from 4G to WiFi)\n` +
-                    `• Or send a smaller file\n\n` +
-                    `Direct transfers have no size limit.`;
+                return `⚠️ Direct connection not possible on this network. ` +
+                    `Peerino doesn't transfer files via relay. Try from a different network (e.g. mobile hotspot).`;
             }
 
             function getTurnSizeLimitMessage(msg) {
