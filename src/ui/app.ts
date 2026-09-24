@@ -1019,11 +1019,14 @@ function updateContext(_context?: 'local' | 'internet'): void {
 }
 
 // ---------- P2P (Phase 4) ----------
-// TURN credentials loaded from environment variables (Vite: VITE_TURN_USERNAME /
-// VITE_TURN_PASSWORD) to avoid exposing secrets in source code.
-// If not configured, only STUN is used (no TURN relay).
-const TURN_USERNAME = import.meta.env.VITE_TURN_USERNAME || '';
-const TURN_PASSWORD = import.meta.env.VITE_TURN_PASSWORD || '';
+// The desktop PeerJS connection uses a static ICE configuration.
+// Receivers get dynamic Cloudflare TURN credentials via the `ice=`
+// parameter in the share link.
+//
+// KNOWN LIMITATION (C-10): the desktop app does NOT fetch TURN
+// credentials for its own PeerJS connection. Desktop↔desktop transfers
+// on symmetric NAT rely on the remote peer providing a relay candidate.
+// Tracked in notes/known-limitations.md, planned fix in v1.0.12.
 
 /**
  * Masks a Peer ID for display in user-visible logs.
@@ -1041,21 +1044,6 @@ const iceServers: RTCIceServer[] = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
 ];
-
-// Add TURN server only if credentials are available.
-if (TURN_USERNAME && TURN_PASSWORD) {
-    iceServers.push({
-        urls: [
-            'stun:stun.relay.metered.ca:80',
-            'turn:global.relay.metered.ca:80',
-            'turn:global.relay.metered.ca:80?transport=tcp',
-            'turn:global.relay.metered.ca:443',
-            'turns:global.relay.metered.ca:443?transport=tcp',
-        ],
-        username: TURN_USERNAME,
-        credential: TURN_PASSWORD,
-    });
-}
 
 async function initPeer(forceRandom: boolean = false): Promise<void> {
     try {

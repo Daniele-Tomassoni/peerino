@@ -86,7 +86,7 @@ pub async fn create_inbox(state: State<'_, AppState>) -> Result<String, String> 
 
         let n_turn = browser_ice.iter().filter(|e| e.credential.is_some()).count();
         log::info!(
-            "Inbox link: {} iceServers via {:?} provider (TTL 24h, {} TURN)",
+            "Inbox link: {} iceServers via {:?} provider ({} TURN)",
             browser_ice.len(), resolution.provider, n_turn
         );
 
