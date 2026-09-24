@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-09-24
+
+### Fixed
+- The HTTP server now reads `HTTP_PORT` from the environment instead of
+  always using port 3000, waits for the Axum task to shut down before
+  returning from `stop_http_server`, and resets `server_running` when
+  the task exits with an error. (C-18)
+- File hashing during the startup scan now runs outside the SQLite lock.
+  Previously, a large file could block `list_files` and other queries
+  for the entire duration of the hash computation. (C-17)
+- The cancellation flag registered by `stream_file` is now removed on
+  every exit path (success, error, cancellation). Previously the flag
+  could persist in the tracker after the stream ended. (C-11 follow-up)
+
+### Documentation
+- README: added a "How file size limits work" section explaining the
+  10 MB TURN relay limit, why it exists, and how to bypass it by using
+  a direct connection.
+- Landing page: added a short note about the relay limit.
+- `notes/known-limitations.md`: documented the LAN mixed-content issue
+  and the shared cancellation flag limitation for concurrent downloads
+  of the same hash.
+
 ## [1.0.7] - 2026-09-24
 
 ### Fixed

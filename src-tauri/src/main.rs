@@ -45,7 +45,7 @@ pub struct AppState {
     pub temp_folder: String,
     pub config_folder: String,
     // HTTP server state
-    pub server_running: tokio::sync::Mutex<bool>,
+    pub server_running: Arc<tokio::sync::Mutex<bool>>,
     pub server_shutdown_tx: tokio::sync::Mutex<Option<tokio::sync::oneshot::Sender<()>>>,
     pub server_handle: tokio::sync::Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
     // Download tracker
@@ -141,7 +141,7 @@ fn main() {
                     shared_folder,
                     temp_folder,
                     config_folder,
-                    server_running: tokio::sync::Mutex::new(false),
+                    server_running: Arc::new(tokio::sync::Mutex::new(false)),
                     server_shutdown_tx: tokio::sync::Mutex::new(None),
                     server_handle: tokio::sync::Mutex::new(None),
                     download_tracker: commands::download_progress::DownloadTracker::new(),
