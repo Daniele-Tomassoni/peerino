@@ -726,8 +726,9 @@
 
             const isInbox = (mode === 'inbox' || window.location.pathname.startsWith('/inbox/'));
 
-            // LOG_LEVELS is declared before any early log() call can occur.
+            // LOG_LEVELS and MAX_LOG_ENTRIES are declared before any early log() call.
             const LOG_LEVELS = { ERROR: 0, WARN: 1, INFO: 2, DEBUG: 3 };
+            const MAX_LOG_ENTRIES = 200;
 
             // TURN limit is supplied by the backend link parameter.
             const turnMaxParam = params.get('turnMax');
@@ -747,8 +748,6 @@
             //   solo via DevTools.
             // - DOM capped to the last 200 entries (no flooding on big transfers)
             // - Errori WebRTC raw vanno in console.error, mai nel DOM.
-            const MAX_LOG_ENTRIES = 200;
-
             function log(msg, level = LOG_LEVELS.INFO) {
                 console.log(msg);  // console completa, per debug via DevTools
                 if (!logContainer) return;
