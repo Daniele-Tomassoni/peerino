@@ -1585,12 +1585,14 @@
                 const limitMb = (maxSize / 1024 / 1024).toFixed(0);
                 return `⚠️ File too large for relay\n\n` +
                     `The file is ${fileMb} MB, but the relay limit is ${limitMb} MB per file.\n` +
-                    `Your connection requires a relay because the two devices are not ` +
-                    `on the same local network.\n\n` +
-                    `To send this file:\n` +
-                    `• Connect both devices to the same WiFi network\n` +
-                    `• Or ask the recipient to connect to your network\n\n` +
-                    `Direct transfers on the same network have no size limit.`;
+                    `A direct connection could not be established, so the transfer is using the relay. ` +
+                    `This can happen with some WiFi networks, mobile networks, VPNs, or strict routers.\n\n` +
+                    `To avoid the relay, try:\n` +
+                    `• Connecting both devices to a regular WiFi network\n` +
+                    `• Disabling VPN or proxy restrictions\n` +
+                    `• Allowing UDP traffic through the router or firewall\n` +
+                    `• Trying again later if the network is changing\n\n` +
+                    `Two devices on different WiFi networks may still connect directly.`;
             }
 
             function getTurnSizeLimitMessage(msg) {
