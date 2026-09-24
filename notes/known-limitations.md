@@ -35,7 +35,7 @@ Consequences:
   manually.
 - All internet shares between different networks go through the TURN
   relay when a direct STUN connection isn't possible, and are subject to
-  the 10 MB per-file relay limit.
+  the 5 MB per-file relay limit.
 
 Possible future fixes (not scheduled):
 - Serve the LAN receiver over HTTPS with a self-signed certificate and

@@ -240,3 +240,5 @@ Interpretazione:
 - `peerino-turn-proxy/src/index.ts` — Worker TURN proxy
 - `peerino-turn-proxy/wrangler.toml` — config Worker
 - `src-tauri/src/utils/ice_provider.rs` — client Rust che chiama il Worker
+
+> Note: relay limit reduced to 5 MB in v1.0.10.

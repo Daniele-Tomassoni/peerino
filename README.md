@@ -48,10 +48,10 @@ Peerino is an open-source desktop application for peer-to-peer file sharing. Sen
 Peerino tries a direct connection first (LAN or peer-to-peer over the internet).
 When a direct connection isn't possible, the transfer falls back to a TURN relay.
 
-**The relay has a per-file limit of 10 MB.** The limit protects the shared
+**The relay has a per-file limit of 5 MB.** The limit protects the shared
 Cloudflare TURN budget. **Direct transfers have no size limit.**
 
-To send files larger than 10 MB, connect both devices to the same WiFi network
+To send files larger than 5 MB, connect both devices to the same WiFi network
 when possible, or use a different transfer method. The app shows whether the
 transfer is using LAN, a direct P2P path, or a relay.
 
@@ -165,7 +165,7 @@ cp .env.example .env
 | `SIGNALING_URL` | Signaling server URL | `0.peerjs.com` |
 | `P2P_WEB_URL` | Base URL of the web receiver page. The link is built as `{P2P_WEB_URL}?mode=download&...`. | `https://peerino.com` |
 | `HTTP_PORT` | Local HTTP server port | `3000` |
-| `TURN_MAX_FILE_SIZE` | Max file size over TURN (bytes). | `10485760` (10 MB) |
+| `TURN_MAX_FILE_SIZE` | Max file size over TURN (bytes). | `5242880` (5 MB) |
 
 > **Note**: Metered is supported as an optional fallback provider. Set `ICE_PROVIDER=metered` and configure `METERED_API_KEY` / `METERED_API_BASE` to use it. Cloudflare TURN is the default.
 
@@ -182,7 +182,7 @@ cp .env.example .env
 - **No account**: no registration, no login
 - **Minimal metadata**: the link contains the filename, the file hash, and the sender's Peer ID. Whoever has the link can download the file as long as the sender is online and the file is still in `shared-folder/`.
 - **Link expiration**: relay links and inbox links expire after 24 hours. Direct P2P-to-Web links do not have a time-based expiry — they work as long as the sender has the file in `shared-folder/` and Peerino is running.
-- **TURN limit**: files up to 10 MB can be transferred via TURN relay. Larger files require a direct connection (LAN or a direct WebRTC path). Direct transfers have no Peerino size limit; this limit protects the shared Cloudflare relay budget.
+- **TURN limit**: files up to 5 MB can be transferred via TURN relay. Larger files require a direct connection (LAN or a direct WebRTC path). Direct transfers have no Peerino size limit; this limit protects the shared Cloudflare relay budget.
 
 ---
 
