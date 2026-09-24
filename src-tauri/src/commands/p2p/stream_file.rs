@@ -32,6 +32,11 @@ async fn cleanup_stream_ack(state: &AppState, stream_id: &str) {
     acks.remove(stream_id);
 }
 
+async fn cleanup_cancellation_flag(state: &AppState, hash: &str) {
+    let mut flags = state.download_tracker.cancelled_flags.lock().await;
+    flags.remove(hash);
+}
+
 /// Stream a file via Tauri Channel with flow control.
 /// Sends 64KB chunks sequentially to prevent OOM.
 /// After every K chunks (default 8 = 512KB), waits for an ack from the JS
@@ -61,16 +66,26 @@ pub async fn stream_file(
         file_index.get(&hash).cloned()
     };
 
-    let file_info = file_info.ok_or_else(|| "File not found in index".to_string())?;
+    let file_info = match file_info {
+        Some(info) => info,
+        None => {
+            cleanup_cancellation_flag(&state, &hash).await;
+            return Err("File not found in index".to_string());
+        }
+    };
 
     // Build file path
     let file_path = Path::new(&state.shared_folder)
         .join(&file_info.filename);
 
     // Open file in streaming mode with tokio::fs
-    let mut file = tokio::fs::File::open(&file_path)
-        .await
-        .map_err(|e| format!("Failed to open file: {}", e))?;
+    let mut file = match tokio::fs::File::open(&file_path).await {
+        Ok(file) => file,
+        Err(e) => {
+            cleanup_cancellation_flag(&state, &hash).await;
+            return Err(format!("Failed to open file: {}", e));
+        }
+    };
 
     // FIX B: create or retrieve the Arc<Notify> for this stream_id
     let k = chunk_limit.unwrap_or(8);
@@ -84,7 +99,13 @@ pub async fn stream_file(
     let notify = {
         let acks = state.stream_acks.lock().await;
         acks.get(&stream_id).cloned()
-            .ok_or_else(|| "Failed to get Notify for stream".to_string())?
+    };
+    let notify = match notify {
+        Some(notify) => notify,
+        None => {
+            cleanup_cancellation_flag(&state, &hash).await;
+            return Err("Failed to get Notify for stream".to_string());
+        }
     };
 
     // Stream in 64KB chunks
@@ -139,8 +160,9 @@ pub async fn stream_file(
     }
     .await;
 
-    // FIX B AGGIUNTA 4: explicit cleanup on every exit path
+    // Explicit cleanup on every completed stream exit path.
     cleanup_stream_ack(&state, &stream_id).await;
+    cleanup_cancellation_flag(&state, &hash).await;
 
     result
 }

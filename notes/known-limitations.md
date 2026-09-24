@@ -43,3 +43,15 @@ Possible future fixes (not scheduled):
 - Or remove the LAN path entirely and rely on WebRTC only.
 
 Status: documented, not fixed. Revisit in v1.1.0.
+
+## Cancellation flag shared across concurrent downloads of the same hash
+
+The download tracker keys cancellation flags by file hash. If two
+downloads of the same file run concurrently, cancelling one cancels both.
+
+Rare edge case (same file, two receivers, simultaneous cancel). Not
+fixed. The uniform cleanup added in v1.0.8 prevents the flag from
+persisting after a transfer ends.
+
+Status: documented, not fixed. Full fix would require a per-transfer
+UUID instead of the hash.
