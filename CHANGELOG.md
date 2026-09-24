@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.9] - 2026-09-24
+
+### Fixed
+- The frontend fallback for the TURN file-size limit was still set to
+  100 MB in three places. If the backend call to `get_turn_limits`
+  failed, the UI would use 100 MB while the backend enforced 10 MB.
+  Now both use 10 MB consistently.
+
+### Changed
+- Share links no longer include the `lan=http://<ip>:3000` parameter.
+  The parameter was blocked by mixed-content protection whenever the
+  receiver was loaded over HTTPS from peerino.com, so it never fired
+  in the normal flow. Opening the receiver directly from the LAN HTTP
+  server (`http://<ip>:3000/receiver?...`) continues to work. Links
+  are ~35-45 characters shorter.
+
+### Documentation
+- Updated stale "100 MB" comments in `turn_limits.rs`.
+- Added `notes/future-offline-lan-sharing.md` describing a planned
+  feature: file sharing on local networks without internet access.
+  The document covers the three current architectural dependencies
+  (signaling, receiver hosting, ICE fetch), a minimal implementation
+  design, security and UX considerations, test requirements, and
+  estimated scope (~250-400 lines). Not implemented.
+
 ## [1.0.8] - 2026-09-24
 
 ### Fixed
