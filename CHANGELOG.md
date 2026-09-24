@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.7] - 2026-09-24
+
+### Fixed
+- The file scanner now propagates read errors instead of silently
+  saving a partial hash for files that fail mid-read. (C-07 follow-up)
+- The startup probe now waits for the async setup task to finish before
+  reading the error state, eliminating a race where the UI could start
+  before the writability check completed. (C-08 follow-up)
+- The upload cleanup task releases the global lock before touching the
+  filesystem, so new chunks arriving during cleanup are no longer
+  blocked. (C-05 follow-up)
+- Atomic renames now use an application-level lock on all platforms.
+  On Unix, `rename()` silently overwrites an existing target, which
+  could cause two concurrent uploads with the same filename to lose
+  one file. The lock prevents this. (C-06 follow-up)
+
 ## [1.0.6] - 2026-09-23
 
 ### Fixed
