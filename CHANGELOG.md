@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.10] - 2026-09-24
+
+### Changed
+- TURN file-size limit reduced from 10 MB to 5 MB. The relay is only
+  used as a fallback when a direct connection isn't possible, and
+  represents a small fraction of transfers. The lower limit protects
+  the shared Cloudflare free-tier budget.
+- Relay size-limit message rewritten in English with clearer guidance:
+  retry first (direct connection is probabilistic), then local network,
+  then different network, then smaller file.
+
+### Infrastructure (not tracked in this repo)
+- The Cloudflare Worker `peerino-turn-proxy` now includes:
+  - IP-based rate limit (4 credentials per hour per IP) via Durable
+    Object with SQLite-backed storage
+  - Credential TTL reduced from 24h to 1h
+  - `customIdentifier` field passed to Cloudflare TURN API for future
+    usage analytics (currently hardcoded to "unknown"; will be populated
+    in a follow-up release)
+
 ## [1.0.9] - 2026-09-24
 
 ### Fixed
