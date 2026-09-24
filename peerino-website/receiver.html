@@ -779,9 +779,8 @@
                 // Reset all state classes
                 el.className = 'phase';
                 if (state) {
-                    // Map old state names to new ones for LED consistency
-                    if (state === 'done-red') state = 'done overlimit';
-                    el.classList.add(state);
+                    // Supporta token multipli separati da spazio (es. 'done overlimit')
+                    state.split(/\s+/).filter(Boolean).forEach(c => el.classList.add(c));
                 }
             }
 
@@ -863,7 +862,7 @@
                 const effectiveSize = (typeof fileSizeOverride === 'number')
                     ? fileSizeOverride
                     : (typeof fileSize === 'number' ? fileSize : 0);
-
+        
                 let detected = false;
 
                 const tryDetect = async () => {
@@ -893,6 +892,7 @@
                         const local = stats.get(pair.localCandidateId);
                         const remote = stats.get(pair.remoteCandidateId);
                         const types = [local?.candidateType, remote?.candidateType];
+                        console.debug('[ICE] pair: local=' + local?.candidateType + ' remote=' + remote?.candidateType + ' state=' + pair.state + ' selected=' + pair.selected + ' nominated=' + pair.nominated);
                         detected = true;
 
                         // Determina se è TURN in modo robusto:
@@ -904,15 +904,19 @@
                             (remote?.url && typeof remote.url === 'string' && remote.url.startsWith('turn:'));
 
                         if (isRelay) {
-                            showTurnWarning();
-                            setPhase('stun', 'fail');
-                            setPhase('turn', 'done turn');
-                            setHeaderBadge('Relay');
+                            // Log PRIMA di qualsiasi chiamata UI: se una di queste fallisce,
+                            // vogliamo comunque vedere che il path era TURN.
                             if (effectiveSize > TURN_MAX_FILE_SIZE) {
-                                setPhase('turn', 'done overlimit');
                                 log('🔴 Selected path: TURN relay, file exceeds ' + (TURN_MAX_FILE_SIZE / 1048576) + 'MB limit');
                             } else {
                                 log('🟡 Selected path: TURN relay, file within ' + (TURN_MAX_FILE_SIZE / 1048576) + 'MB limit');
+                            }
+                            showTurnWarning();
+                            setPhase('stun', 'fail');
+                            setPhase('turn', 'done');
+                            setHeaderBadge('Relay');
+                            if (effectiveSize > TURN_MAX_FILE_SIZE) {
+                                setPhase('turn', 'done overlimit');
                             }
                         } else if (types[0] === 'host' && types[1] === 'host') {
                             hideTurnWarning();
@@ -932,7 +936,7 @@
                             log('🟢 Selected path: ICE mixed (treating as STUN)');
                         }
                     } catch (e) {
-                        // stats non pronti, riproveremo
+                        console.error('[detectAndMarkPath] error:', e);
                     }
                 };
 

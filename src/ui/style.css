@@ -1214,6 +1214,12 @@ body {
     color: var(--text);
 }
 
+.app-version {
+    font-size: 0.75rem;
+    color: var(--text-dim, #888);
+    margin-left: 0.5rem;
+}
+
 .app-footer .checkbox-label {
     margin-top: 0;
     color: var(--text-dim);

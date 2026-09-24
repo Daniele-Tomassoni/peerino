@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 import { invoke, Channel } from '@tauri-apps/api/core';
+import { getVersion } from '@tauri-apps/api/app';
 import { open } from '@tauri-apps/plugin-dialog';
 import { writeText } from '@tauri-apps/plugin-clipboard-manager';
 import { sendNotification } from '@tauri-apps/plugin-notification';
@@ -2420,6 +2421,16 @@ listen('upload-progress', (event) => {
     }, 500);
 
 document.addEventListener('DOMContentLoaded', async () => {
+    (async () => {
+        try {
+            const v = await getVersion();
+            const el = document.getElementById('app-version');
+            if (el) el.textContent = 'v' + v;
+        } catch (e) {
+            console.error('[version] getVersion failed:', e);
+        }
+    })();
+
     const startupError = await invoke<string | null>('get_startup_error').catch(() => null);
     if (startupError) {
         window.alert(`Peerino cannot start safely:\n\n${startupError}`);
