@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Daniele-Tomassoni/peerino/actions/workflows/ci.yml/badge.svg)](https://github.com/Daniele-Tomassoni/peerino/actions/workflows/ci.yml)
 
-**P2P file sharing without cloud and without accounts. Direct when possible, relay when needed.**
+**P2P file sharing without cloud and without accounts. Direct connections when possible; TURN is used only to diagnose network connectivity.**
 
 Peerino is an open-source desktop application for peer-to-peer file sharing. Send a file to anyone via a simple link — the recipient doesn't need to install anything. Or receive files from anyone, directly on your computer.
 
@@ -33,27 +33,24 @@ Peerino is an open-source desktop application for peer-to-peer file sharing. Sen
 
 - 🔗 **Share via link**: generate a link, share it, and the recipient downloads the file from their browser
 - 📥 **Inbox**: receive files from anyone via a link, without them needing to install Peerino
-- 🔒 **Privacy**: file content is encrypted end-to-end with DTLS on all WebRTC connections (direct LAN, STUN, TURN). Note: WebRTC uses ephemeral self-signed certificates, so peer identity is not verified through a PKI. The signaling server sees connection metadata. If a TURN relay is used, it sees encrypted traffic only, but consumes ~2x bandwidth.
+- 🔒 **Privacy**: file content is encrypted end-to-end with DTLS on direct WebRTC connections. TURN is used only to diagnose network connectivity; no file content is transmitted through TURN.
 - 🏠 **LAN fallback**: direct transfer on the same network, without going through the internet. Uses plain HTTP (not encrypted) for maximum speed; only active when both peers are on the same local network.
 - ⚡ **WebRTC P2P**: direct peer-to-peer connection when possible
-- 🔄 **TURN relay**: when NAT requires it, a Cloudflare TURN relay forwards the encrypted data
+- 🔄 **TURN diagnostic**: used only to detect when a direct connection is unavailable; Peerino does not transfer files through TURN
 - ✅ **Integrity verification**: SHA-256 hash verified on incoming transfers (browser → app). The hash is computed incrementally by the sender and compared by the receiver; mismatches are rejected before saving.
 - 🆓 **Open source**: AGPLv3 licensed, free, no account required
 - 💻 **Windows only** (for now; macOS and Linux in roadmap)
 
 ---
 
-## 📏 How file size limits work
+## 📏 Network connectivity and TURN
 
-Peerino tries a direct connection first (LAN or peer-to-peer over the internet).
-When a direct connection isn't possible, the transfer falls back to a TURN relay.
+Peerino transfers files over direct LAN or WebRTC connections. Direct transfers
+have no Peerino size limit. TURN is used only to diagnose whether a direct
+peer-to-peer connection is possible; Peerino does not transfer files through TURN.
 
-**The relay has a per-file limit of 5 MB.** The limit protects the shared
-Cloudflare TURN budget. **Direct transfers have no size limit.**
-
-To send files larger than 5 MB, connect both devices to the same WiFi network
-when possible, or use a different transfer method. The app shows whether the
-transfer is using LAN, a direct P2P path, or a relay.
+If a direct connection is not possible, Peerino shows a clear message asking
+you to try from a different network, such as a mobile hotspot.
 
 ## 🚀 How it works
 
@@ -64,7 +61,7 @@ transfer is using LAN, a direct P2P path, or a relay.
 3. Click **Generate Link** — the link is shown with a **Copy** button. Click Copy to copy it to the clipboard.
 4. Paste it in an email, chat, or any other channel
 5. The recipient opens the link in their browser and downloads the file
-6. The file is streamed directly from your computer via WebRTC (or a TURN relay if NAT requires it)
+6. The file is streamed directly from your computer via a direct WebRTC connection
 
 ### Receive a file from someone who doesn't have Peerino
 
@@ -165,24 +162,24 @@ cp .env.example .env
 | `SIGNALING_URL` | Signaling server URL | `0.peerjs.com` |
 | `P2P_WEB_URL` | Base URL of the web receiver page. The link is built as `{P2P_WEB_URL}?mode=download&...`. | `https://peerino.com` |
 | `HTTP_PORT` | Local HTTP server port | `3000` |
-| `TURN_MAX_FILE_SIZE` | Max file size over TURN (bytes). | `5242880` (5 MB) |
+| `TURN_MAX_FILE_SIZE` | TURN diagnostic limit. With `0`, no file passes through TURN. | `0` |
 
 > **Note**: Metered is supported as an optional fallback provider. Set `ICE_PROVIDER=metered` and configure `METERED_API_KEY` / `METERED_API_BASE` to use it. Cloudflare TURN is the default.
 
-### TURN server
+### TURN diagnostic service
 
-**TURN server**: Peerino uses Cloudflare TURN for relay connections. The TURN key is kept server-side in a Cloudflare Worker, so it's never exposed in the client. The free tier includes 1 TB/month of egress traffic, which is enough for most use cases.
+Peerino uses Cloudflare TURN credentials only to diagnose whether a direct connection is possible. The credentials are kept server-side in a Cloudflare Worker and are never exposed in the client. No file content is transmitted through TURN.
 
 ---
 
 ## 🔐 Privacy & Security
 
-- **End-to-end encryption**: all WebRTC connections (STUN, TURN, internet) use DTLS.
-- **No central server for file storage**: files are never stored on a remote server. On LAN and STUN, transfers are direct. When NAT requires it, a TURN relay forwards the encrypted data. When both peers are on the same local network, Peerino can fall back to a faster plain-HTTP LAN transfer; this path is not encrypted but never leaves the local network.
+- **End-to-end encryption**: direct WebRTC connections use DTLS.
+- **No central server for file storage**: files are never stored on a remote server. On LAN and direct WebRTC, transfers are direct. TURN is used only to diagnose connectivity; no file content is transmitted through it. When both peers are on the same local network, Peerino can fall back to a faster plain-HTTP LAN transfer; this path is not encrypted but never leaves the local network.
 - **No account**: no registration, no login
 - **Minimal metadata**: the link contains the filename, the file hash, and the sender's Peer ID. Whoever has the link can download the file as long as the sender is online and the file is still in `shared-folder/`.
 - **Link expiration**: relay links and inbox links expire after 24 hours. Direct P2P-to-Web links do not have a time-based expiry — they work as long as the sender has the file in `shared-folder/` and Peerino is running.
-- **TURN limit**: files up to 5 MB can be transferred via TURN relay. Larger files require a direct connection (LAN or a direct WebRTC path). Direct transfers have no Peerino size limit; this limit protects the shared Cloudflare relay budget.
+- **TURN diagnostic**: if a direct connection is unavailable, Peerino shows a message asking you to try from a different network. TURN never carries file content in this configuration.
 
 ---
 

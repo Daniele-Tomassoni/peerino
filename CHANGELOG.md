@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- TURN relay is now diagnostic-only: no file passes through
+  Cloudflare TURN. When a direct connection isn't possible,
+  Peerino shows a clear message asking to try a different network.
+- TURN credential TTL reduced to 15 minutes.
+- TURN rate limit adjusted to 20 credentials/hour per IP.
+- New Cloudflare Worker `peerino-turn-monitor` tracks monthly
+  TURN egress and triggers a global shutdown flag when the
+  free-tier budget is approached.
+
+### Removed
+- File size cap for TURN transfers (no longer applicable).
+
 ## [1.0.10] - 2026-09-24
 
 ### Changed

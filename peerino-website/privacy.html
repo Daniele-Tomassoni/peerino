@@ -102,9 +102,11 @@
             <li>No personal information (name, email, IP address logs)</li>
             <li>No usage analytics or telemetry</li>
             <li>No cookies for profiling or advertising</li>
-            <li>No files: on LAN and STUN, transfers are direct between peers.
-                When a direct connection is impossible, a TURN relay (Cloudflare)
-                forwards the encrypted traffic.</li>
+            <li>No files are transmitted through relay servers. Cloudflare TURN
+                credentials are used only to diagnose whether a direct
+                peer-to-peer connection is possible. If a direct connection is
+                not possible, Peerino informs the user and suggests trying from
+                a different network.</li>
             <li><strong>LAN fallback (not encrypted):</strong> when both peers are on
                 the same local network, Peerino can use a direct plain-HTTP transfer
                 for speed. This path is not encrypted. It only activates when both
@@ -137,12 +139,11 @@
                 negotiation), not file content.</li>
             <li><strong>STUN servers</strong>: public servers (Google, Cloudflare, etc.)
                 used to discover your public IP for direct connections.</li>
-            <li><strong>TURN server</strong> (Cloudflare, if a direct connection is
-                impossible): Cloudflare TURN relays the encrypted traffic when a
-                direct peer-to-peer connection cannot be established (e.g. symmetric
-                NAT, mobile networks). The relay sees encrypted traffic only and
-                cannot decrypt it. Peerino does not operate any file storage
-                servers.</li>
+            <li><strong>TURN service</strong> (Cloudflare): TURN credentials are
+                used only to diagnose whether a direct peer-to-peer connection
+                is possible. No file, fragment, or file content is transmitted
+                through TURN. If a direct connection is not possible, Peerino
+                informs the user and suggests trying from a different network.</li>
         </ul>
 
         <h2>Your Rights (GDPR)</h2>

@@ -97,7 +97,9 @@
             host, store, or moderate any files. Peerino does not operate any file
             storage servers. All transfers happen directly between users when possible.
             When a direct connection is impossible (e.g. symmetric NAT, mobile
-            networks), a TURN relay (Cloudflare) forwards the encrypted traffic.
+            networks), Peerino uses TURN only to diagnose connectivity. No file
+            or file content is transmitted through TURN; the user is asked to try
+            from a different network.
         </p>
 
         <h2>2. Your Responsibility</h2>

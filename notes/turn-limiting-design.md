@@ -1,5 +1,9 @@
 # TURN Rate Limiting Design — Peerino
 
+> **Nota storica:** a partire da v1.0.11, TURN è diagnostico
+> e il rate limiting è gestito insieme al monitor di budget.
+> Questo documento conserva il design precedente per riferimento.
+
 Stato: PROGETTAZIONE (non implementato)
 Ultimo aggiornamento: 22 settembre 2026
 

@@ -33,9 +33,10 @@ Consequences:
 - The LAN path only works when the receiver page is served directly from
   the LAN HTTP server (`http://<ip>:3000`), which the user must open
   manually.
-- All internet shares between different networks go through the TURN
-  relay when a direct STUN connection isn't possible, and are subject to
-  the 5 MB per-file relay limit.
+- TURN is used only as a diagnostic signal when a direct STUN/WebRTC
+  connection is not possible. Peerino does not transfer files through TURN.
+  If the direct path is unavailable, the user sees a message asking them
+  to try from a different network.
 
 Possible future fixes (not scheduled):
 - Serve the LAN receiver over HTTPS with a self-signed certificate and
