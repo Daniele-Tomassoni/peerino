@@ -15,7 +15,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 // Tauri commands for managing the TURN limit and associated telemetry.
 // Exposes to the frontend:
-// - max_file_size (read from env or default 100MB)
+// - max_file_size (read from env or default 10MB)
 // - max_file_size_buffer (with 10% margin for protocol overhead)
 // - rejections_total (global counter, atomicu64)
 
@@ -26,9 +26,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 /// Snapshot of TURN limits and telemetry
 #[derive(Debug, Clone, Serialize)]
 pub struct TurnLimits {
-    /// Limit declared to the user (e.g. 100 MB).
+    /// Limit declared to the user (e.g. 10 MB).
     pub max_file_size: u64,
-    /// Effective limit with overhead margin (e.g. 110 MB).
+    /// Effective limit with overhead margin (e.g. 11 MB).
     pub max_file_size_buffer: u64,
     /// How many transfers have been rejected for exceeding the limit.
     pub rejections_total: u64,
