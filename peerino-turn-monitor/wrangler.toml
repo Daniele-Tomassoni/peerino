@@ -1,0 +1,22 @@
+name = "peerino-turn-monitor"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+[vars]
+CF_ACCOUNT_ID = "bdcc40a0dbff01764b3e0f1a8718d041"
+TURN_EGRESS_THRESHOLD_GB = 250
+MONITOR_INTERVAL_SECONDS = 60
+HEARTBEAT_TTL_SECONDS = 900
+SHUTDOWN_TTL_SECONDS = 21600
+
+[[kv_namespaces]]
+binding = "TURN_GUARD"
+id = "a95aac9379644e7287125bf4f6360fdf"
+
+[[durable_objects.bindings]]
+name = "TURN_MONITOR"
+class_name = "TurnMonitor"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["TurnMonitor"]
