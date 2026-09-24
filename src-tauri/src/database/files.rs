@@ -171,86 +171,83 @@ impl FileRepository {
         let shared_folder = shared_folder.to_string();
 
         tokio::task::spawn_blocking(move || {
-            let db = conn.blocking_lock();
-
-            // Read filename -> (hash, size) metadata from the database.
+            // Section 1: read the current index under a short lock.
             let existing: std::collections::HashMap<String, (String, u64)> = {
+                let db = conn.blocking_lock();
                 let mut stmt = db
                     .prepare("SELECT filename, hash, size FROM files")
                     .map_err(|e| e.to_string())?;
                 let metadata = stmt
-                    .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, u64>(2)?)))
+                    .query_map([], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, u64>(2)?))
+                    })
                     .map_err(|e| e.to_string())?
-                    .filter_map(|r| r.ok())
+                    .filter_map(Result::ok)
                     .map(|(filename, hash, size)| (filename, (hash, size)))
                     .collect();
                 metadata
             };
 
-            // Scan the folder
+            // Section 2: scan and hash without holding the database lock.
             let mut added = 0;
             let mut disk_filenames = std::collections::HashSet::new();
+            let mut to_upsert = Vec::new();
             if let Ok(entries) = std::fs::read_dir(&shared_folder) {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if path.is_file() {
-                        let filename = path.file_name()
-                            .and_then(|n| n.to_str())
-                            .unwrap_or("unknown")
-                            .to_string();
-
-                        // Skip dotfiles (e.g., .tmp files, .DS_Store)
-                        if filename.starts_with('.') {
-                            continue;
-                        }
-                        disk_filenames.insert(filename.clone());
-                        let metadata = match std::fs::metadata(&path) {
-                            Ok(metadata) => metadata,
-                            Err(_) => continue,
-                        };
-                        if let Some((_, db_size)) = existing.get(&filename) {
-                            if *db_size == metadata.len() {
-                                continue;
-                            }
-                        }
-
-                        // Compute SHA-256 only for new files
-                        let hash = {
-                            use sha2::{Digest, Sha256};
-                            let mut hasher = Sha256::new();
-                            let mut file = std::fs::File::open(&path)
-                                .map_err(|e| format!("Open error on {}: {}", filename, e))?;
-                            let mut buffer = vec![0u8; 64 * 1024];
-                            loop {
-                                let bytes = std::io::Read::read(&mut file, &mut buffer)
-                                    .map_err(|e| format!("Read error on {}: {}", filename, e))?;
-                                if bytes == 0 { break; }
-                                hasher.update(&buffer[..bytes]);
-                            }
-                            hex::encode(hasher.finalize())
-                        };
-
-                        // Add or refresh the database record.
-                        let uploaded_at = chrono::Utc::now().to_rfc3339();
-                        db.execute(
-                            "INSERT OR REPLACE INTO files (hash, filename, size, uploaded_at) VALUES (?1, ?2, ?3, ?4)",
-                            params![hash, filename, metadata.len(), uploaded_at],
-                        )
-                        .map_err(|e| e.to_string())?;
-                        added += 1;
+                    if !path.is_file() { continue; }
+                    let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown").to_string();
+                    if filename.starts_with('.') { continue; }
+                    disk_filenames.insert(filename.clone());
+                    let metadata = match std::fs::metadata(&path) {
+                        Ok(metadata) => metadata,
+                        Err(_) => continue,
+                    };
+                    if existing.get(&filename).map(|(_, size)| *size) == Some(metadata.len()) {
+                        continue;
                     }
+                    use sha2::{Digest, Sha256};
+                    let mut hasher = Sha256::new();
+                    let mut file = std::fs::File::open(&path)
+                        .map_err(|e| format!("Open error on {}: {}", filename, e))?;
+                    let mut buffer = vec![0u8; 64 * 1024];
+                    loop {
+                        let bytes = std::io::Read::read(&mut file, &mut buffer)
+                            .map_err(|e| format!("Read error on {}: {}", filename, e))?;
+                        if bytes == 0 { break; }
+                        hasher.update(&buffer[..bytes]);
+                    }
+                    to_upsert.push((filename, hex::encode(hasher.finalize()), metadata.len()));
                 }
             }
 
-            // Remove database records whose files no longer exist.
-            let mut stmt = db.prepare("SELECT filename FROM files").map_err(|e| e.to_string())?;
-            let db_filenames: Vec<String> = stmt.query_map([], |row| row.get::<_, String>(0))
-                .map_err(|e| e.to_string())?.filter_map(|r| r.ok()).collect();
-            for filename in db_filenames {
-                if !disk_filenames.contains(&filename) {
-                    db.execute("DELETE FROM files WHERE filename = ?1", [&filename])
+            // Section 3: write changed records under a short transaction lock.
+            if !to_upsert.is_empty() {
+                let db = conn.blocking_lock();
+                let tx = db.unchecked_transaction().map_err(|e| e.to_string())?;
+                for (filename, hash, size) in &to_upsert {
+                    tx.execute(
+                        "INSERT OR REPLACE INTO files (hash, filename, size, uploaded_at) VALUES (?1, ?2, ?3, ?4)",
+                        params![hash, filename, *size as i64, chrono::Utc::now().to_rfc3339()],
+                    ).map_err(|e| e.to_string())?;
+                }
+                tx.commit().map_err(|e| e.to_string())?;
+                added = to_upsert.len();
+            }
+
+            // Section 4: remove orphaned records under a short lock.
+            let orphans: Vec<String> = existing.keys()
+                .filter(|filename| !disk_filenames.contains(*filename))
+                .cloned()
+                .collect();
+            if !orphans.is_empty() {
+                let db = conn.blocking_lock();
+                let tx = db.unchecked_transaction().map_err(|e| e.to_string())?;
+                for filename in &orphans {
+                    tx.execute("DELETE FROM files WHERE filename = ?1", [filename])
                         .map_err(|e| e.to_string())?;
                 }
+                tx.commit().map_err(|e| e.to_string())?;
             }
 
             Ok(added)
