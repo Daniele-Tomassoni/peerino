@@ -15,6 +15,8 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 pub mod network;
 
+pub(crate) static ATOMIC_WRITE_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Writes through a same-directory temporary file and renames atomically.
 pub async fn atomic_write<F, Fut>(
     final_path: &std::path::Path,
@@ -30,9 +32,18 @@ where
         let _ = tokio::fs::remove_file(&tmp).await;
         return Err(e);
     }
+    let _rename_guard = ATOMIC_WRITE_LOCK.lock().await;
     let mut target = final_path.to_path_buf();
     let mut counter = 1;
     loop {
+        if target.exists() {
+            let stem = final_path.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+            let ext = final_path.extension().and_then(|s| s.to_str()).unwrap_or("");
+            let new_name = if ext.is_empty() { format!("{}_{}", stem, counter) } else { format!("{}_{}.{}", stem, counter, ext) };
+            target = parent.join(new_name);
+            counter += 1;
+            continue;
+        }
         match tokio::fs::rename(&tmp, &target).await {
             Ok(()) => return Ok(target),
             Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists || target.exists() => {

@@ -121,19 +121,26 @@ pub async fn cleanup_abandoned_uploads(
     uploads: &tokio::sync::Mutex<std::collections::HashMap<String, crate::commands::p2p::upload_state::UploadState>>,
 ) {
     let now = std::time::Instant::now();
-    let mut map = uploads.lock().await;
     let mut expired = Vec::new();
-    for (peer_id, upload) in map.iter() {
-        let last = *upload.last_chunk_at.lock().await;
-        if now.duration_since(last) > Duration::from_secs(300) {
-            expired.push(peer_id.clone());
+    {
+        let map = uploads.lock().await;
+        for (peer_id, upload) in map.iter() {
+            let last = *upload.last_chunk_at.lock().await;
+            if now.duration_since(last) > Duration::from_secs(300) {
+                expired.push(peer_id.clone());
+            }
         }
     }
 
     for peer_id in expired {
-        if let Some(upload) = map.remove(&peer_id) {
+        let upload = {
+            let mut map = uploads.lock().await;
+            map.remove(&peer_id)
+        };
+        if let Some(upload) = upload {
+            let temp_path = upload.temp_path.clone();
             drop(upload.file);
-            let _ = fs::remove_file(&upload.temp_path).await;
+            let _ = fs::remove_file(&temp_path).await;
             log::info!("Removed abandoned upload for peer: {}", peer_id);
         }
     }

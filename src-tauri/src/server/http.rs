@@ -458,6 +458,14 @@ async fn inbox_upload_handler(
     let mut final_target = final_path.clone();
     let mut counter = 1;
     drop(target_file);
+    let _rename_guard = crate::utils::ATOMIC_WRITE_LOCK.lock().await;
+    if final_target.exists() {
+        let stem = final_path.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+        let ext = final_path.extension().and_then(|s| s.to_str()).unwrap_or("");
+        let new_name = if ext.is_empty() { format!("{}_{}", stem, counter) } else { format!("{}_{}.{}", stem, counter, ext) };
+        final_target = shared_folder_path.join(new_name);
+        counter += 1;
+    }
     loop {
         match tokio::fs::rename(&tmp_path, &final_target).await {
             Ok(()) => break,
