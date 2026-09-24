@@ -70,9 +70,9 @@ mod tests {
 
     #[test]
     fn default_limits() {
-        // Default 1 KB.
-        assert_eq!(get_turn_max_file_size(), 1024);
-        // Buffer = 1024 + 102 = 1126 bytes (+10%)
-        assert_eq!(get_turn_max_file_size_buffer(), 1126);
+        // Default 0 (no files via TURN).
+        assert_eq!(get_turn_max_file_size(), 0);
+        // Buffer = 0 + 0 = 0 bytes (+10% of 0)
+        assert_eq!(get_turn_max_file_size_buffer(), 0);
     }
 }

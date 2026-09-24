@@ -38,7 +38,7 @@ pub fn get_turn_max_file_size() -> u64 {
         std::env::var("TURN_MAX_FILE_SIZE")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(1024) // 1 KB diagnostic-only default.
+            .unwrap_or(0) // 0 = no files via TURN (diagnostic-only).
     })
 }
 
