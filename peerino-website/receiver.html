@@ -735,10 +735,10 @@
             let TURN_MAX_FILE_SIZE = 10485760; // default 10MB
             if (turnMaxParam) {
                 const parsed = parseInt(turnMaxParam, 10);
-                if (!isNaN(parsed) && parsed > 0) {
+                if (!isNaN(parsed) && parsed >= 0) {
                     TURN_MAX_FILE_SIZE = parsed;
                 } else {
-                    log('⚠️ Invalid turnMax from link ("' + turnMaxParam + '"), using default 100MB');
+                    log('⚠️ Invalid turnMax from link (non-numeric), using default');
                 }
             }
 
