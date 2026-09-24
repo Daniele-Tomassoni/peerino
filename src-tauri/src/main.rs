@@ -61,6 +61,7 @@ pub struct AppState {
     // Incoming uploads state (browser → app)
     pub incoming_uploads: Arc<tokio::sync::Mutex<HashMap<String, commands::p2p::upload_state::UploadState>>>,
     pub startup_error: Arc<tokio::sync::Mutex<Option<String>>>,
+    pub startup_ready: Arc<std::sync::atomic::AtomicBool>,
     // FIX B: stream ack map — Arc<Notify> per stream_id for flow control (app → browser)
     pub stream_acks: Arc<tokio::sync::Mutex<HashMap<String, Arc<tokio::sync::Notify>>>>,
     // FIX data integrity: global hash mismatch counter (atomic, no lock).
@@ -157,6 +158,7 @@ fn main() {
                     // Incoming uploads state (browser → app)
                     incoming_uploads: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
                     startup_error: Arc::new(tokio::sync::Mutex::new(None)),
+                    startup_ready: Arc::new(std::sync::atomic::AtomicBool::new(false)),
                     // Telemetria integrità dati
                     hash_mismatch_total: std::sync::Arc::new(
                         std::sync::atomic::AtomicU64::new(0)
@@ -240,6 +242,7 @@ fn main() {
             let file_index = app.state::<AppState>().file_index.clone();
             
             let startup_error = app.state::<AppState>().startup_error.clone();
+            let startup_ready = app.state::<AppState>().startup_ready.clone();
             tauri::async_runtime::spawn(async move {
                 for (label, folder) in [("shared", &shared_folder), ("temp", &temp_folder), ("config", &config_folder)] {
                     if let Err(e) = tokio::fs::create_dir_all(folder).await {
@@ -305,8 +308,8 @@ fn main() {
                     }
                     log::info!("📂 Loaded {} files from the persistent index", index.len());
                 }
-                
-                
+
+                startup_ready.store(true, std::sync::atomic::Ordering::SeqCst);
             });
 
             // Start the temp cleanup task

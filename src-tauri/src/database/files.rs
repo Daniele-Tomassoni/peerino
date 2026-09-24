@@ -218,16 +218,14 @@ impl FileRepository {
                         let hash = {
                             use sha2::{Digest, Sha256};
                             let mut hasher = Sha256::new();
-                            if let Ok(mut file) = std::fs::File::open(&path) {
-                                let mut buffer = vec![0u8; 64 * 1024];
-                                loop {
-                                    if let Ok(bytes) = std::io::Read::read(&mut file, &mut buffer) {
-                                        if bytes == 0 { break; }
-                                        hasher.update(&buffer[..bytes]);
-                                    } else {
-                                        break;
-                                    }
-                                }
+                            let mut file = std::fs::File::open(&path)
+                                .map_err(|e| format!("Open error on {}: {}", filename, e))?;
+                            let mut buffer = vec![0u8; 64 * 1024];
+                            loop {
+                                let bytes = std::io::Read::read(&mut file, &mut buffer)
+                                    .map_err(|e| format!("Read error on {}: {}", filename, e))?;
+                                if bytes == 0 { break; }
+                                hasher.update(&buffer[..bytes]);
                             }
                             hex::encode(hasher.finalize())
                         };
