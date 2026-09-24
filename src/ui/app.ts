@@ -316,9 +316,13 @@ function applyConnBadge(badge: HTMLElement | null, key: string, fileSize?: numbe
         // Retrieve current limit from backend (cached in memory).
         const turnMax = (window as any).__turnMaxFileSize || 10 * 1024 * 1024;
         if (fileSize !== undefined && fileSize > turnMax) {
+            const prevClass = badge.className;
             badge.className = 'conn-badge turn-overlimit';
             badge.setAttribute('data-tooltip',
-                'Your connection requires a relay server. To share this file, connect to WiFi.');
+                'Direct connection not possible on this network. Try from a different network (e.g. mobile hotspot).');
+            if (!prevClass.includes('turn-overlimit')) {
+                autoShowTooltip(badge, 5000);
+            }
         } else {
             badge.className = 'conn-badge turn';
             badge.setAttribute('data-tooltip', TOOLTIP_TURN);
@@ -334,9 +338,26 @@ function applyConnBadge(badge: HTMLElement | null, key: string, fileSize?: numbe
 // A single position:fixed element on body: never clipped by overflow
 // of scroll panels and always positioned inside the viewport.
 const connTooltipEl = document.getElementById('conn-tooltip');
+let autoHideTooltipTimer: number | null = null;
 
 function hideConnTooltip(): void {
     connTooltipEl?.classList.remove('visible');
+}
+
+function autoShowTooltip(badge: HTMLElement, durationMs: number): void {
+    const text = badge.getAttribute('data-tooltip');
+    if (!text) return;
+
+    showConnTooltip(badge);
+
+    if (autoHideTooltipTimer !== null) {
+        window.clearTimeout(autoHideTooltipTimer);
+    }
+
+    autoHideTooltipTimer = window.setTimeout(() => {
+        hideConnTooltip();
+        autoHideTooltipTimer = null;
+    }, durationMs);
 }
 
 function showConnTooltip(badge: HTMLElement): void {
