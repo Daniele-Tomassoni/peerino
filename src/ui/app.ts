@@ -1817,7 +1817,7 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                     detectedPath2 = 'turn';
                 }
                 if (detectedPath2 === 'turn' && msg.size > turnMaxSize2) {
-                    const errMsg = formatTurnLimitMessage(msg.size, turnMaxSize2);
+                    const errMsg = 'Direct connection not possible on this network. Try from a different network (e.g. mobile hotspot).';
                     log('TURN size limit exceeded (inbox): ' + errMsg);
                     rejectedByTurnLimit = true;
                     rejectedIncomingUploads.set(conn.peer, 'turn_size_limit');
@@ -1831,7 +1831,7 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                         conn.send(JSON.stringify({
                             type: 'upload_error',
                             reason: 'turn_size_limit',
-                            message: errMsg,
+                            message: 'Direct connection not possible on this network. Try from a different network (e.g. mobile hotspot).',
                             max_size: turnMaxSize2,
                             file_size: msg.size,
                         }));

@@ -1727,7 +1727,7 @@
                                    sendingCancelled = true;
                                    log(`❌ Error from sender: ${msg.message}`);
                                    if (msg.reason === 'turn_size_limit') {
-                                       setStatus(getTurnSizeLimitMessage(msg), 'error');
+                                       setStatus('⚠️ Direct connection not possible on this network. Try from a different network (e.g. mobile hotspot).', 'error');
                                    } else {
                                        setStatus(`❌ Error: ${msg.message}`, 'error');
                                    }
