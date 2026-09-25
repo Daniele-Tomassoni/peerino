@@ -200,6 +200,9 @@ interface IncomingUpload {
     cancelled: boolean;
 }
 const incomingUploads = new Map<string, IncomingUpload>();
+// Peers whose inbox upload was rejected. Prevents residual chunks from being
+// processed after a TURN limit or initialization failure.
+const rejectedIncomingUploads = new Map<string, 'turn_size_limit' | 'init_failed'>();
 
 // FIX: idempotent helper to send upload_complete to the browser.
 // Guarantees the message is sent exactly once, regardless of
@@ -1613,6 +1616,7 @@ function handleIncomingConnection(conn: DataConnection): void {
             }
             connections.delete(conn.peer);
             incomingUploads.delete(conn.peer);
+            rejectedIncomingUploads.delete(conn.peer);
             uploadMessageQueues.delete(conn.peer);
             // Remove all uploads from this peer from the map
             for (const key of activeUploads.keys()) {
@@ -1771,10 +1775,13 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                 const downloadKey2 = downloadId;
                 let detectedPath2: 'direct' | 'turn' | null = null;
                 let pollAttempts2 = 0;
+                let rejectedByTurnLimit = false;
                 const pollTurnPath = () => {
+                    if (rejectedByTurnLimit) return;
                     if (pollAttempts2 >= 10) return;
                     pollAttempts2++;
                     detectConnectionPath(conn).then((path) => {
+                        if (rejectedByTurnLimit) return;
                         if (!path) {
                             setTimeout(pollTurnPath, 1000);
                             return;
@@ -1783,7 +1790,7 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                         connectionPaths.set(downloadKey2, path);
                         updateDownloadProgress(Array.from(activeDownloads.values()));
                     }).catch(() => {
-                        if (pollAttempts2 < 10) setTimeout(pollTurnPath, 1000);
+                        if (!rejectedByTurnLimit && pollAttempts2 < 10) setTimeout(pollTurnPath, 1000);
                     });
                 };
                 setTimeout(pollTurnPath, 500);
@@ -1812,6 +1819,8 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                 if (detectedPath2 === 'turn' && msg.size > turnMaxSize2) {
                     const errMsg = formatTurnLimitMessage(msg.size, turnMaxSize2);
                     log('TURN size limit exceeded (inbox): ' + errMsg);
+                    rejectedByTurnLimit = true;
+                    rejectedIncomingUploads.set(conn.peer, 'turn_size_limit');
                     invoke('record_turn_rejection_cmd').catch(() => { /* best-effort */ });
 
                     // The download bar is already shown above; just set the red badge.
@@ -1865,6 +1874,8 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                     conn.send(JSON.stringify({ type: 'upload_accepted' }));
                 } catch (err) {
                     log('❌ Error initializing upload: ' + getErrorMessage(err));
+                    incomingUploads.delete(conn.peer);
+                    rejectedIncomingUploads.set(conn.peer, 'init_failed');
                     conn.send(JSON.stringify({ type: 'upload_error', message: getErrorMessage(err) }));
                     // Remove from active downloads on error
                     activeDownloads.delete(downloadId);
@@ -1912,6 +1923,12 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
             chunk = data;
         } else {
             chunk = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+        }
+
+        const rejection = rejectedIncomingUploads.get(conn.peer);
+        if (rejection) {
+            log(`⏸️ Ignoring chunk: upload rejected (${rejection})`);
+            return;
         }
 
         const upload = incomingUploads.get(conn.peer);

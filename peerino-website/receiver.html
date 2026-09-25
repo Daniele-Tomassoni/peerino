@@ -1724,6 +1724,7 @@
                                    fileInput.value = '';
                                    uploadBtn.disabled = true;
                                } else if (msg.type === 'upload_error') {
+                                   sendingCancelled = true;
                                    log(`❌ Error from sender: ${msg.message}`);
                                    if (msg.reason === 'turn_size_limit') {
                                        setStatus(getTurnSizeLimitMessage(msg), 'error');
