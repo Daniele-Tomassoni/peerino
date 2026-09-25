@@ -919,9 +919,9 @@
                             // Log PRIMA di qualsiasi chiamata UI: se una di queste fallisce,
                             // vogliamo comunque vedere che il path era TURN.
                             if (effectiveSize > TURN_MAX_FILE_SIZE) {
-                                log('🔴 Selected path: TURN diagnostic: direct connection not possible. Try from a different network.');
+                                log('🔴 Selected path: TURN diagnostic: direct connection not possible. Try a less restrictive network.');
                             } else {
-                                log('🟡 Selected path: TURN diagnostic: direct connection not possible. Try from a different network.');
+                                log('🟡 Selected path: TURN diagnostic: direct connection not possible. Try a less restrictive network.');
                             }
                             showTurnWarning();
                             setPhase('stun', 'fail');

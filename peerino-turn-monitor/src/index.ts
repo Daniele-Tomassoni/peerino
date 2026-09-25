@@ -97,7 +97,7 @@ async function fetchEgressBytes(env: Env, since: string): Promise<number> {
 
 async function runMonitorCheck(env: Env): Promise<{ egress: number; thresholdBytes: number; shutdown: boolean; changed: boolean }> {
     const egress = await fetchEgressBytes(env, getMonthStartDate());
-    const thresholdBytes = Math.floor(parseFloat(env.TURN_EGRESS_THRESHOLD_GB || '250') * 1024 * 1024 * 1024);
+    const thresholdBytes = Math.floor(parseFloat(env.TURN_EGRESS_THRESHOLD_GB || '100') * 1024 * 1024 * 1024);
     const shutdown = egress > thresholdBytes;
     const currentRaw = await env.TURN_GUARD.get(SHUTDOWN_KEY);
     const changed = shutdown !== (currentRaw === 'true');
