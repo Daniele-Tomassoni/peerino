@@ -27,9 +27,6 @@ use crate::AppState;
 use crate::utils::turn_creds::signaling_url_from_env;
 use urlencoding::encode;
 
-/// Inbox validity in seconds (must match RelayConfig::link_expiry_seconds).
-const INBOX_EXPIRY_SECS: u64 = 24 * 60 * 60;
-
 /// Create a reverse inbox for receiving files from browsers via WebRTC.
 /// Returns a URL (with ?mode=inbox&peerId=...) that opens the unified web page
 /// (served at Netlify root), which connects to the sender via PeerJS.

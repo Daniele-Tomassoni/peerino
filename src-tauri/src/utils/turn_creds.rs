@@ -1,3 +1,9 @@
+#![allow(dead_code)]
+// Modulo con infrastruttura ICE per provider alternativi (coturn, HMAC).
+// Attualmente non usato dal flusso P2P principale (receiver-fetch TURN).
+// Mantenuto per: fallback coturn self-hosted, eventuale ritorno a
+// sender-embed, supporto multi-provider.
+
 // Peerino - P2P file sharing without cloud, without accounts, without intermediaries.
 // Copyright (C) 2026 Daniele Tomassoni
 //

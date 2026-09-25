@@ -1,3 +1,9 @@
+#![allow(dead_code)]
+// Modulo con risoluzione ICE multi-provider (Cloudflare, Metered, coturn).
+// Attualmente usato solo per lettura SIGNALING_URL. Le funzioni fetch_*
+// sono mantenute per: eventuale modello sender-embed, supporto provider
+// alternativi, debug.
+
 // Peerino - P2P file sharing without cloud, without accounts, without intermediaries.
 // Copyright (C) 2026 Daniele Tomassoni
 //
