@@ -50,7 +50,7 @@ have no Peerino size limit. TURN is used only to diagnose whether a direct
 peer-to-peer connection is possible; Peerino does not transfer files through TURN.
 
 If a direct connection is not possible, Peerino shows a clear message asking
-you to try from a different network, such as a mobile hotspot.
+you to try a less restrictive network.
 
 ## 🚀 How it works
 
@@ -179,7 +179,7 @@ Peerino uses Cloudflare TURN credentials only to diagnose whether a direct conne
 - **No account**: no registration, no login
 - **Minimal metadata**: the link contains the filename, the file hash, and the sender's Peer ID. Whoever has the link can download the file as long as the sender is online and the file is still in `shared-folder/`.
 - **Link expiration**: relay links and inbox links expire after 24 hours. Direct P2P-to-Web links do not have a time-based expiry — they work as long as the sender has the file in `shared-folder/` and Peerino is running.
-- **TURN diagnostic**: if a direct connection is unavailable, Peerino shows a message asking you to try from a different network. TURN never carries file content in this configuration.
+- **TURN diagnostic**: if a direct connection is unavailable, Peerino shows a message asking you to try a less restrictive network. TURN never carries file content in this configuration.
 
 ---
 
