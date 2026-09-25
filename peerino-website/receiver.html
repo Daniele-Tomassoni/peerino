@@ -730,6 +730,17 @@
             const LOG_LEVELS = { ERROR: 0, WARN: 1, INFO: 2, DEBUG: 3 };
             const MAX_LOG_ENTRIES = 200;
 
+            // Fase 1: receiver-fetch TURN. The Worker generates fresh credentials
+            // when the connection starts. sessionStorage avoids repeat fetches
+            // in the same tab.
+            const TURN_WORKER_URL = 'https://peerino-turn-proxy.shaft-bdc.workers.dev/api/turn-credentials';
+            const TURN_FETCH_TIMEOUT_MS = 4000;
+            const TURN_CACHE_TTL_MS = 5 * 60 * 1000;
+            const STUN_FALLBACK = [
+                { urls: 'stun:stun.l.google.com:19302' },
+                { urls: 'stun:stun1.l.google.com:19302' },
+            ];
+
             // TURN limit is supplied by the backend link parameter.
             const turnMaxParam = params.get('turnMax');
             let TURN_MAX_FILE_SIZE = 10485760; // default 10MB
@@ -1019,7 +1030,7 @@
 
                 hideDetecting();
                 // Start WebRTC after the LAN probe completes
-                connectToSender(senderPeerId);
+                await connectToSender(senderPeerId);
             }
 
             startBtn.addEventListener('click', () => {
@@ -1065,16 +1076,75 @@
                 }
             }
 
-            // ===== ICE CONFIG FROM LINK PARAMS =====
-            // Builds iceServers from stunUrls/turnUrls/turnUser/turnPass in the link.
-            // No hardcoded server: configuration comes from the sender's env.
+            // ===== ICE CONFIG =====
+            // New links fetch fresh TURN credentials from the Worker. The legacy
+            // ice= parser below remains the first choice for rollout compatibility.
             function splitUrlList(raw) {
                 return (raw || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
             }
 
-            function buildIceServers() {
-                // Unified TURN provider: if the link includes &ice=<base64-URL-safe-JSON>,
-                // decode the compact format and expand to standard WebRTC array.
+            async function fetchTurnFromWorker(peerId) {
+                const cacheKey = 'peerino:turn:v1:' + (peerId || 'unknown');
+                const now = Date.now();
+
+                try {
+                    const raw = sessionStorage.getItem(cacheKey);
+                    if (raw) {
+                        const cached = JSON.parse(raw);
+                        if (cached.expiresAt > now
+                            && Array.isArray(cached.iceServers)
+                            && cached.iceServers.length > 0) {
+                            console.debug('[TURN] from cache');
+                            return cached.iceServers;
+                        }
+                        sessionStorage.removeItem(cacheKey);
+                    }
+                } catch (e) {
+                    console.debug('[TURN] cache read failed:', e.message);
+                }
+
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), TURN_FETCH_TIMEOUT_MS);
+
+                try {
+                    const resp = await fetch(TURN_WORKER_URL, {
+                        method: 'GET',
+                        signal: controller.signal,
+                    });
+                    clearTimeout(timeoutId);
+
+                    if (!resp.ok) {
+                        console.debug('[TURN] Worker HTTP ' + resp.status);
+                        return [];
+                    }
+
+                    const json = await resp.json();
+                    if (!json || !Array.isArray(json.iceServers) || json.iceServers.length === 0) {
+                        console.debug('[TURN] invalid Worker response');
+                        return [];
+                    }
+
+                    try {
+                        sessionStorage.setItem(cacheKey, JSON.stringify({
+                            iceServers: json.iceServers,
+                            expiresAt: now + TURN_CACHE_TTL_MS,
+                            fetchedAt: now,
+                        }));
+                    } catch (e) {
+                        // Storage quota/security errors are non-fatal.
+                    }
+
+                    console.debug('[TURN] fetched from Worker, ' + json.iceServers.length + ' entries');
+                    return json.iceServers;
+                } catch (e) {
+                    clearTimeout(timeoutId);
+                    console.debug('[TURN] fetch failed:', e.message);
+                    return [];
+                }
+            }
+
+            async function buildIceServers() {
+                // Unified TURN provider: preserve legacy &ice=<base64-URL-safe-JSON>.
                 // Compact format: {"u":"<user>","c":"<cred>","s":["stun:..."],"t":["turn:..."]}
                 if (iceParam) {
                     try {
@@ -1093,30 +1163,31 @@
                             out.push({ urls: decoded.t, username: decoded.u, credential: decoded.c });
                         }
                         if (out.length > 0) {
+                            log('[ICE] using legacy ice= param');
                             log(`📡 Using unified ICE provider: ${out.length} server group(s)`);
                             return out;
                         }
-                        log('⚠️ &ice= decoded but empty, falling back to defaults');
+                        log('⚠️ &ice= decoded but empty, falling back to Worker/STUN');
                     } catch (e) {
                         log('⚠️ Failed to decode &ice= param: ' + e);
                     }
                 }
 
-                // Fallback: public STUN only
-                return [
-                    { urls: 'stun:stun.l.google.com:19302' },
-                    { urls: 'stun:stun1.l.google.com:19302' },
-                ];
+                const turnServers = await fetchTurnFromWorker(senderPeerId);
+                return STUN_FALLBACK.concat(turnServers);
             }
 
             // ===== PEERJS CONNECTION (Download) =====
-            function connectToSender(senderId) {
+            async function connectToSender(senderId) {
                 if (!senderId) {
                     setStatus('❌ Error: sender ID missing.', 'error');
                     log('❌ PeerID missing');
                     return;
                 }
 
+                log('🌐 Preparing secure connection...');
+                setStatus('🌐 Preparing secure connection...', 'loading');
+                const iceServers = await buildIceServers();
                 log('🔗 Connecting to sender...');
                 setStatus('🔗 Connecting to sender...', 'loading');
 
@@ -1124,8 +1195,6 @@
                 // connection can actually open (esp. behind NAT, where the TURN
                 // relay is required). The link carries everything via
                 // &signal / &stunUrls / &turnUrls / &turnUser / &turnPass.
-                const iceServers = buildIceServers();
-
                 const peerOptions = { config: { iceServers }, debug: 2 };
                 if (signalHost) {
                     const isSelfHosted = !signalHost.includes('peerjs.com');
@@ -1598,18 +1667,18 @@
             // FIX: accept a hashPromise so we don't block conn.on('open')
             // with hash computation for >100MB files. The hash is computed
             // in parallel with the PeerJS connection setup.
-            function connectToSenderForUpload(senderId, hashPromise) {
+            async function connectToSenderForUpload(senderId, hashPromise) {
                if (!senderId) {
                    setStatus('❌ Error: sender ID missing.', 'error');
                    log('❌ PeerID missing');
                    return;
                }
 
+               log('🌐 Preparing secure connection for upload...');
+               setStatus('🌐 Preparing secure connection...', 'loading');
+               const iceServers = await buildIceServers();
                log('🔗 Connecting to sender for upload...');
                setStatus('🔗 Connecting to sender...', 'loading');
-
-               // Build ICE servers from link params (same config as download mode)
-               const iceServers = buildIceServers();
 
                const peerOptions = { config: { iceServers } };
                if (signalHost) {
@@ -1895,7 +1964,7 @@
                // Connect to sender via WebRTC and send file.
                // Pass the hash promise so it can be awaited in conn.on('open')
                // without blocking the connection setup.
-               connectToSenderForUpload(senderPeerId, hashPromise);
+               await connectToSenderForUpload(senderPeerId, hashPromise);
            });
 
             // ===== INIT =====
