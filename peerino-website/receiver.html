@@ -743,7 +743,7 @@
 
             // TURN limit is supplied by the backend link parameter.
             const turnMaxParam = params.get('turnMax');
-            let TURN_MAX_FILE_SIZE = 10485760; // default 10MB
+            let TURN_MAX_FILE_SIZE = 0; // TURN is diagnostic-only by default
             if (turnMaxParam) {
                 const parsed = parseInt(turnMaxParam, 10);
                 if (!isNaN(parsed) && parsed >= 0) {

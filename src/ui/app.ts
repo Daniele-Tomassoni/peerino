@@ -317,7 +317,7 @@ function applyConnBadge(badge: HTMLElement | null, key: string, fileSize?: numbe
     if (path === 'turn') {
         // TURN: green if file is within limit, red if over limit.
         // Retrieve current limit from backend (cached in memory).
-        const turnMax = (window as any).__turnMaxFileSize || 10 * 1024 * 1024;
+        const turnMax = (window as any).__turnMaxFileSize ?? 0;
         if (fileSize !== undefined && fileSize > turnMax) {
             const prevClass = badge.className;
             badge.className = 'conn-badge turn-overlimit';
@@ -1229,7 +1229,7 @@ async function streamFileToConnection(conn: DataConnection, hash: string): Promi
     // is not applied, allowing files >100MB to transfer over TURN.
     // FIX LOW #11: use the __turnMaxFileSize cache (loaded at startup)
     // instead of calling the get_turn_limits IPC every time. Avoids 2 redundant IPCs.
-    const turnMaxSize = (window as any).__turnMaxFileSize || 10 * 1024 * 1024;
+    const turnMaxSize = (window as any).__turnMaxFileSize ?? 0;
     // Fallback: if the cache is not ready yet, try loading it once
     if (!(window as any).__turnMaxFileSize) {
         try {
@@ -1738,7 +1738,7 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                 // so the user gets instant feedback instead of waiting 1-2s for ICE stats.
                 // The badge is updated asynchronously when the path is detected.
                 // FIX LOW #11: use the __turnMaxFileSize cache instead of calling IPC.
-                const turnMaxSize2 = (window as any).__turnMaxFileSize || 10 * 1024 * 1024;
+                const turnMaxSize2 = (window as any).__turnMaxFileSize ?? 0;
                 // Fallback: if the cache is not ready yet, load it once
                 if (!(window as any).__turnMaxFileSize) {
                     try {
@@ -2480,7 +2480,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     await initPeer();
     // Cache TURN limit (Phase 2): blocks files > 10MB on TURN.
-    invoke<{ max_file_size: number; max_file_size_buffer: number; rejections_total: number }>('get_turn_limits').then((limits) => { (window as any).__turnMaxFileSize = limits.max_file_size; }).catch(() => { (window as any).__turnMaxFileSize = 10 * 1024 * 1024; });
+    invoke<{ max_file_size: number; max_file_size_buffer: number; rejections_total: number }>('get_turn_limits').then((limits) => { (window as any).__turnMaxFileSize = limits.max_file_size; }).catch(() => { (window as any).__turnMaxFileSize = 0; });
     // Listen for system resume from hibernation/suspension (emitted by Rust backend)
     listen('system-resumed', () => {
         console.log('🔄 System resumed. Restoring connections...');
