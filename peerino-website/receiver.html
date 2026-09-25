@@ -573,7 +573,7 @@
 
         <!-- TURN bandwidth warning -->
         <div id="turn-warning" class="turn-warning" style="display:none; background: rgba(234, 179, 8, 0.1); border: 1px solid rgba(234, 179, 8, 0.3); border-radius: var(--radius-sm); padding: 12px; margin-top: 10px; color: var(--yellow); font-size: 0.85rem; text-align: center; font-weight: 500;">
-            ⚠️ Direct connection not possible on this network. Peerino doesn't transfer files via relay. Try from a different network (e.g. mobile hotspot).
+            ⚠️ Direct connection not possible on this network. Peerino doesn't transfer files via relay. Try a less restrictive network.
         </div>
 
         <!-- DOWNLOAD UI -->
@@ -1229,7 +1229,7 @@
                     connectTimeout = setTimeout(() => {
                         if (connection && !connection.open) {
                             log('❌ Connection timeout (30s): WebRTC channel did not open');
-                            setStatus('❌ Direct connection not possible on this network. Try from a different network (e.g. mobile hotspot).', 'error');
+                            setStatus('❌ Direct connection not possible on this network. Try a less restrictive network.', 'error');
                             downloadBtn.classList.remove('show');
                         }
                     }, 30000);
@@ -1656,7 +1656,7 @@
             // ===== LOCALIZATION =====
             function formatTurnLimitMessage(fileSize, maxSize) {
                 return `⚠️ Direct connection not possible on this network. ` +
-                    `Peerino doesn't transfer files via relay. Try from a different network (e.g. mobile hotspot).`;
+                    `Peerino doesn't transfer files via relay. Try a less restrictive network.`;
             }
 
             function getTurnSizeLimitMessage(msg) {
@@ -1727,7 +1727,7 @@
                                    sendingCancelled = true;
                                    log(`❌ Error from sender: ${msg.message}`);
                                    if (msg.reason === 'turn_size_limit') {
-                                       setStatus('⚠️ Direct connection not possible on this network. Try from a different network (e.g. mobile hotspot).', 'error');
+                                       setStatus('⚠️ Direct connection not possible on this network. Try a less restrictive network.', 'error');
                                    } else {
                                        setStatus(`❌ Error: ${msg.message}`, 'error');
                                    }

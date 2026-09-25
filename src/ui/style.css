@@ -1480,18 +1480,19 @@ body {
    of scroll panels; positioned via JS in app.ts) */
 .conn-tooltip {
     position: fixed;
-    max-width: 280px;
-    padding: 8px 10px;
-    background: rgba(7, 11, 20, 0.97);
-    border: 1px solid var(--panel-border);
-    border-radius: 6px;
+    max-width: 320px;
+    padding: 0.6rem 0.9rem;
+    background: #101827;
+    border: 2px solid var(--yellow);
+    border-radius: 8px;
     color: var(--text);
-    font-size: 0.78rem;
-    line-height: 1.35;
+    font-size: 0.9rem;
+    font-weight: 500;
+    line-height: 1.4;
     white-space: normal;
     text-align: left;
     z-index: 9999;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.45);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(234, 179, 8, 0.12);
     pointer-events: none;
     opacity: 0;
     transform: translateY(2px);

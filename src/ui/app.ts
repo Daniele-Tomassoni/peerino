@@ -322,9 +322,9 @@ function applyConnBadge(badge: HTMLElement | null, key: string, fileSize?: numbe
             const prevClass = badge.className;
             badge.className = 'conn-badge turn-overlimit';
             badge.setAttribute('data-tooltip',
-                'Direct connection not possible on this network. Try from a different network (e.g. mobile hotspot).');
+                'Direct connection not possible on this network. Try a less restrictive network.');
             if (!prevClass.includes('turn-overlimit')) {
-                autoShowTooltip(badge, 5000);
+                autoShowTooltip(badge, 10000);
             }
         } else {
             badge.className = 'conn-badge turn';
@@ -371,16 +371,23 @@ function showConnTooltip(badge: HTMLElement): void {
     connTooltipEl.textContent = text;
     connTooltipEl.classList.add('visible');
 
-    // Position relative to viewport (measure after text render)
     const rect = badge.getBoundingClientRect();
     const tw = connTooltipEl.offsetWidth;
     const th = connTooltipEl.offsetHeight;
+    const gap = 8;
+    const viewportWidth = window.innerWidth;
 
-    // Horizontal: aligned to the left edge of the LED, clamped to screen edges
-    let left = Math.max(8, Math.min(rect.left, window.innerWidth - tw - 8));
-    // Vertical: above the LED; if no space, below
-    let top = rect.top - th - 10;
-    if (top < 8) top = rect.bottom + 10;
+    // Prefer the left side; fall back to the right when the tooltip cannot fit.
+    let left = rect.left - tw - gap;
+    if (left < 8) {
+        left = Math.min(rect.right + gap, viewportWidth - tw - 8);
+    }
+    left = Math.max(8, left);
+
+    const top = Math.max(8, Math.min(
+        rect.top + (rect.height - th) / 2,
+        window.innerHeight - th - 8
+    ));
 
     connTooltipEl.style.left = `${left}px`;
     connTooltipEl.style.top = `${top}px`;
@@ -409,7 +416,7 @@ function escapeHtml(text: string): string {
 function formatTurnLimitMessage(_fileSize: number, _maxSize: number): string {
     return `⚠️ Direct connection not possible\n\n` +
         `This network requires a relay, and Peerino doesn't transfer files\n` +
-        `via relay. Try from a different network (e.g. mobile hotspot).`;
+        `via relay. Try a less restrictive network.`;
 }
 
 function getErrorMessage(error: unknown): string {
@@ -1817,7 +1824,7 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                     detectedPath2 = 'turn';
                 }
                 if (detectedPath2 === 'turn' && msg.size > turnMaxSize2) {
-                    const errMsg = 'Direct connection not possible on this network. Try from a different network (e.g. mobile hotspot).';
+                    const errMsg = 'Direct connection not possible on this network. Try a less restrictive network.';
                     log('TURN size limit exceeded (inbox): ' + errMsg);
                     rejectedByTurnLimit = true;
                     rejectedIncomingUploads.set(conn.peer, 'turn_size_limit');
@@ -1831,7 +1838,7 @@ async function processIncomingMessage(conn: DataConnection, data: any): Promise<
                         conn.send(JSON.stringify({
                             type: 'upload_error',
                             reason: 'turn_size_limit',
-                            message: 'Direct connection not possible on this network. Try from a different network (e.g. mobile hotspot).',
+                            message: 'Direct connection not possible on this network. Try a less restrictive network.',
                             max_size: turnMaxSize2,
                             file_size: msg.size,
                         }));
