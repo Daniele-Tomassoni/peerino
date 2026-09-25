@@ -1034,8 +1034,8 @@ function updateContext(_context?: 'local' | 'internet'): void {
 
 // ---------- P2P (Phase 4) ----------
 // The desktop PeerJS connection uses a static ICE configuration.
-// Receivers get dynamic Cloudflare TURN credentials via the `ice=`
-// parameter in the share link.
+// The receiver fetches dynamic Cloudflare TURN credentials from the Worker
+// when the transfer starts.
 //
 // KNOWN LIMITATION (C-10): the desktop app does NOT fetch TURN
 // credentials for its own PeerJS connection. Desktop↔desktop transfers

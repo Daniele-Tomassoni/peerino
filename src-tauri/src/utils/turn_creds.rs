@@ -109,6 +109,15 @@ pub fn generate_ephemeral_credentials(
     })
 }
 
+/// Reads the optional PeerJS signaling host from the environment.
+/// None means the default cloud signaling host.
+pub fn signaling_url_from_env() -> Option<String> {
+    std::env::var("SIGNALING_URL")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 /// Resolves the ICE/signaling configuration from environment variables:
 /// - SIGNALING_URL      (optional): self-hosted peerjs-server host
 /// - STUN_URLS          (optional): comma separated, defaults to Google STUN
@@ -131,10 +140,7 @@ pub fn ice_link_config_from_env() -> IceLinkConfig {
 /// internet inbox to align the credential lifetime with the inbox validity
 /// (24h), so TURN does not die before the inbox itself.
 pub fn ice_link_config_from_env_with_ttl(ttl_secs: u64) -> IceLinkConfig {
-    let signaling_url = std::env::var("SIGNALING_URL")
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty());
+    let signaling_url = signaling_url_from_env();
 
     let stun_urls = split_urls(
         &std::env::var("STUN_URLS").unwrap_or_else(|_| DEFAULT_STUN_URLS.to_string()),
